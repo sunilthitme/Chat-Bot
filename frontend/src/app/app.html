@@ -27,6 +27,9 @@
       <button type="submit" [disabled]="isLoggingIn || !loginEmail || !loginPassword">
         {{ isLoggingIn ? 'Logging in...' : 'Login' }}
       </button>
+      <button *ngIf="isLoggingIn" type="button" class="secondary-button" (click)="cancelLogin()">
+        Cancel
+      </button>
     </form>
 
     <p *ngIf="loginError" class="error-message">{{ loginError }}</p>

@@ -23,7 +23,9 @@ interface ChatMessage {
 export class AppComponent {
   private readonly chatTimeoutMs = 10_000;
   private readonly loginTimeoutMs = 5_000;
+  private readonly loginUrl = 'http://localhost:8080/api/auth/login';
   private loginAttemptId = 0;
+  private loginAbortController: AbortController | null = null;
 
   userInput = '';
   loginEmail = '';
@@ -64,7 +66,7 @@ export class AppComponent {
     return this.role === 'ADMIN';
   }
 
-  login(): void {
+  async login(): Promise<void> {
     this.loginError = '';
     const email = this.loginEmail.trim().toLowerCase();
     const password = this.loginPassword;
@@ -80,43 +82,68 @@ export class AppComponent {
     }
 
     const currentAttemptId = ++this.loginAttemptId;
+    this.loginAbortController?.abort();
+    this.loginAbortController = new AbortController();
     this.isLoggingIn = true;
-    window.setTimeout(() => {
+
+    const timeoutId = window.setTimeout(() => {
       if (this.isLoggingIn && this.loginAttemptId === currentAttemptId) {
+        this.loginAbortController?.abort();
         this.isLoggingIn = false;
         this.loginError = 'Login took too long. Restart backend and refresh this page.';
         this.chatService.logClientError(`Login UI timeout after ${this.loginTimeoutMs} ms for email: ${email}`);
       }
     }, this.loginTimeoutMs);
 
-    this.authService.login(email, password)
-      .pipe(
-        timeout(this.loginTimeoutMs),
-        finalize(() => {
-          if (this.loginAttemptId === currentAttemptId) {
-            this.isLoggingIn = false;
-          }
-        })
-      )
-      .subscribe({
-        next: (response) => {
-          if (this.loginAttemptId === currentAttemptId) {
-            this.saveSession(response);
-          }
+    try {
+      const response = await fetch(this.loginUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
         },
-        error: (error) => {
-          if (this.loginAttemptId !== currentAttemptId) {
-            return;
-          }
-          const isTimeout = error?.name === 'TimeoutError';
-          if (isTimeout) {
-            this.chatService.logClientError(`Login response exceeded ${this.loginTimeoutMs} ms for email: ${email}`);
-          }
-          this.loginError = isTimeout
-            ? 'Login is taking too long. Please check that the backend is running and try again.'
-            : 'Login failed. Use a valid td.com account with access.';
-        }
+        body: JSON.stringify({ email, password }),
+        signal: this.loginAbortController.signal
       });
+
+      if (this.loginAttemptId !== currentAttemptId) {
+        return;
+      }
+
+      if (!response.ok) {
+        this.loginError = 'Login failed. Use a valid td.com account with access.';
+        return;
+      }
+
+      const loginResponse = await response.json() as LoginResponse;
+      this.saveSession(loginResponse);
+    } catch (error) {
+      if (this.loginAttemptId !== currentAttemptId) {
+        return;
+      }
+
+      const isAbort = error instanceof DOMException && error.name === 'AbortError';
+      this.loginError = isAbort
+        ? 'Login request was cancelled or timed out. Please try again.'
+        : 'Backend is not reachable. Please make sure Spring Boot is running.';
+    } finally {
+      window.clearTimeout(timeoutId);
+      if (this.loginAttemptId === currentAttemptId) {
+        this.isLoggingIn = false;
+        this.loginAbortController = null;
+      }
+    }
+  }
+
+  cancelLogin(): void {
+    if (!this.isLoggingIn) {
+      return;
+    }
+
+    this.loginAttemptId++;
+    this.loginAbortController?.abort();
+    this.loginAbortController = null;
+    this.isLoggingIn = false;
+    this.loginError = 'Login cancelled. Please try again.';
   }
 
   logout(): void {

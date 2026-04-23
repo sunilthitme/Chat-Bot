@@ -90,6 +90,10 @@
   font-weight: 700;
 }
 
+.secondary-button {
+  background: #64748b !important;
+}
+
 .error-message,
 .admin-message {
   color: #b91c1c;
