@@ -22,6 +22,7 @@ interface ChatMessage {
 })
 export class AppComponent {
   private readonly chatTimeoutMs = 10_000;
+  private readonly loginTimeoutMs = 5_000;
 
   userInput = '';
   loginEmail = '';
@@ -73,11 +74,20 @@ export class AppComponent {
 
     this.isLoggingIn = true;
     this.authService.login(email, this.loginPassword)
-      .pipe(finalize(() => (this.isLoggingIn = false)))
+      .pipe(
+        timeout(this.loginTimeoutMs),
+        finalize(() => (this.isLoggingIn = false))
+      )
       .subscribe({
         next: (response) => this.saveSession(response),
-        error: () => {
-          this.loginError = 'Login failed. Use a valid td.com account with access.';
+        error: (error) => {
+          const isTimeout = error?.name === 'TimeoutError';
+          if (isTimeout) {
+            this.chatService.logClientError(`Login response exceeded ${this.loginTimeoutMs} ms for email: ${email}`);
+          }
+          this.loginError = isTimeout
+            ? 'Login is taking too long. Please check that the backend is running and try again.'
+            : 'Login failed. Use a valid td.com account with access.';
         }
       });
   }
