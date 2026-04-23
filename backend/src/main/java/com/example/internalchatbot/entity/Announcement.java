@@ -5,35 +5,25 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
-import jakarta.persistence.Index;
 import jakarta.persistence.PrePersist;
 import jakarta.persistence.Table;
 
 import java.time.LocalDateTime;
 
-// Entity mapped to the chat_questions table.
+// Entity mapped to announcements shown at the top of the chatbot page.
 @Entity
-@Table(
-        name = "chat_questions",
-        indexes = {
-                @Index(name = "idx_chat_question", columnList = "question"),
-                @Index(name = "idx_chat_keywords", columnList = "keywords")
-        }
-)
-public class ChatQuestion {
+@Table(name = "announcements")
+public class Announcement {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
     @Column(nullable = false, length = 500)
-    private String question;
+    private String message;
 
-    @Column(nullable = false, columnDefinition = "TEXT")
-    private String answer;
-
-    @Column(nullable = false, length = 500)
-    private String keywords;
+    @Column(nullable = false)
+    private boolean active;
 
     @Column(nullable = false, updatable = false)
     private LocalDateTime createdAt;
@@ -46,28 +36,20 @@ public class ChatQuestion {
         this.id = id;
     }
 
-    public String getQuestion() {
-        return question;
+    public String getMessage() {
+        return message;
     }
 
-    public void setQuestion(String question) {
-        this.question = question;
+    public void setMessage(String message) {
+        this.message = message;
     }
 
-    public String getAnswer() {
-        return answer;
+    public boolean isActive() {
+        return active;
     }
 
-    public void setAnswer(String answer) {
-        this.answer = answer;
-    }
-
-    public String getKeywords() {
-        return keywords;
-    }
-
-    public void setKeywords(String keywords) {
-        this.keywords = keywords;
+    public void setActive(boolean active) {
+        this.active = active;
     }
 
     public LocalDateTime getCreatedAt() {

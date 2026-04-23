@@ -2,6 +2,9 @@ package com.example.internalchatbot.service;
 
 import com.example.internalchatbot.entity.ChatQuestion;
 import com.example.internalchatbot.repository.ChatQuestionRepository;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 
 import java.util.Arrays;
@@ -11,7 +14,9 @@ import java.util.List;
 @Service
 public class ChatService {
 
+    private static final Logger log = LoggerFactory.getLogger(ChatService.class);
     private static final String NOT_FOUND_REPLY = "Sorry, I could not find information.";
+    private static final int MAX_MATCHES = 1;
 
     private final ChatQuestionRepository chatQuestionRepository;
 
@@ -20,14 +25,25 @@ public class ChatService {
     }
 
     public String ask(String message) {
-        String normalizedMessage = normalize(message);
+        long startTime = System.currentTimeMillis();
+        log.info("Chat request received. messageLength={}", message == null ? 0 : message.length());
 
-        List<ChatQuestion> directMatches = chatQuestionRepository.searchByQuestionOrKeywords(normalizedMessage);
+        String normalizedMessage = normalize(message);
+        log.info("Chat message normalized. normalizedMessage={}", normalizedMessage);
+
+        List<ChatQuestion> directMatches = chatQuestionRepository.searchByQuestionOrKeywords(
+                normalizedMessage,
+                PageRequest.of(0, MAX_MATCHES)
+        );
         if (!directMatches.isEmpty()) {
+            log.info("Direct chat match found. questionId={}", directMatches.getFirst().getId());
+            logIfSlow(startTime);
             return directMatches.getFirst().getAnswer();
         }
 
-        return findByImportantWords(normalizedMessage);
+        String reply = findByImportantWords(normalizedMessage);
+        logIfSlow(startTime);
+        return reply;
     }
 
     private String findByImportantWords(String normalizedMessage) {
@@ -36,13 +52,28 @@ public class ChatService {
                 .toList();
 
         for (String word : words) {
-            List<ChatQuestion> matches = chatQuestionRepository.searchByQuestionOrKeywords(word);
+            log.info("Searching chat answer by keyword. keyword={}", word);
+            List<ChatQuestion> matches = chatQuestionRepository.searchByQuestionOrKeywords(
+                    word,
+                    PageRequest.of(0, MAX_MATCHES)
+            );
             if (!matches.isEmpty()) {
+                log.info("Keyword chat match found. keyword={}, questionId={}", word, matches.getFirst().getId());
                 return matches.getFirst().getAnswer();
             }
         }
 
+        log.warn("No chat answer found for message. normalizedMessage={}", normalizedMessage);
         return NOT_FOUND_REPLY;
+    }
+
+    private void logIfSlow(long startTime) {
+        long durationMs = System.currentTimeMillis() - startTime;
+        if (durationMs > 10_000) {
+            log.error("Chat response took more than 10 seconds. durationMs={}", durationMs);
+        } else {
+            log.info("Chat response completed. durationMs={}", durationMs);
+        }
     }
 
     private String normalize(String text) {

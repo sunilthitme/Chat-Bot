@@ -1,6 +1,7 @@
 package com.example.internalchatbot.repository;
 
 import com.example.internalchatbot.entity.ChatQuestion;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -17,5 +18,5 @@ public interface ChatQuestionRepository extends JpaRepository<ChatQuestion, Long
                or lower(cq.keywords) like lower(concat('%', :searchText, '%'))
             order by cq.id asc
             """)
-    List<ChatQuestion> searchByQuestionOrKeywords(@Param("searchText") String searchText);
+    List<ChatQuestion> searchByQuestionOrKeywords(@Param("searchText") String searchText, Pageable pageable);
 }

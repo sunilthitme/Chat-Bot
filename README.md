@@ -62,9 +62,24 @@ Frontend URL: `http://localhost:4200`
 
 ## API
 
+Login:
+
+```http
+POST /api/auth/login
+Content-Type: application/json
+
+{
+  "email": "admin@td.com",
+  "password": "admin123"
+}
+```
+
+Ask chatbot:
+
 ```http
 POST /api/chat/ask
 Content-Type: application/json
+X-User-Token: token-from-login
 
 {
   "message": "How to create RITM?"
@@ -85,3 +100,14 @@ Response:
 2. Authentication with Spring Security and JWT.
 3. Chat history stored by user and timestamp.
 4. Admin panel to create, update, and delete Q&A records.
+
+## Current Demo Logins
+
+- Admin: `admin@td.com` / `admin123`
+- User: `user@td.com` / `user123`
+
+Only valid `@td.com` emails are accepted. Admin users can grant access to more `@td.com` users and add top-page announcements.
+
+## Logs
+
+Backend logs are written to `backend/system.out.logs`. Chat requests over 10 seconds are written as error logs. Frontend timeout errors are also reported back to the backend log endpoint when possible.

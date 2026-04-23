@@ -1,12 +1,80 @@
 <main class="page">
-  <section class="chat-window" aria-label="Internal chatbot">
+  <div *ngIf="announcement" class="announcement-bar">
+    <div class="announcement-text">{{ announcement }}</div>
+  </div>
+
+  <section *ngIf="!isLoggedIn" class="login-panel" aria-label="Login">
+    <h1>Internal Chatbot</h1>
+    <p>Login with your td.com account.</p>
+
+    <form class="login-form" (ngSubmit)="login()">
+      <input
+        type="email"
+        name="loginEmail"
+        [(ngModel)]="loginEmail"
+        placeholder="email@td.com"
+        autocomplete="email"
+        [disabled]="isLoggingIn"
+      >
+      <input
+        type="password"
+        name="loginPassword"
+        [(ngModel)]="loginPassword"
+        placeholder="Password"
+        autocomplete="current-password"
+        [disabled]="isLoggingIn"
+      >
+      <button type="submit" [disabled]="isLoggingIn || !loginEmail || !loginPassword">
+        {{ isLoggingIn ? 'Logging in...' : 'Login' }}
+      </button>
+    </form>
+
+    <p *ngIf="loginError" class="error-message">{{ loginError }}</p>
+    <p class="demo-help">Demo admin: admin@td.com / admin123</p>
+    <p class="demo-help">Demo user: user@td.com / user123</p>
+  </section>
+
+  <section *ngIf="isLoggedIn" class="chat-window" aria-label="Internal chatbot">
     <header class="chat-header">
       <div>
         <h1>Internal Chatbot</h1>
-        <p>Application help desk</p>
+        <p>{{ email }} - {{ role }}</p>
       </div>
-      <span class="status">Online</span>
+      <button type="button" class="logout-button" (click)="logout()">Logout</button>
     </header>
+
+    <section *ngIf="isAdmin" class="admin-panel" aria-label="Admin controls">
+      <form class="admin-form" (ngSubmit)="grantAccess()">
+        <input
+          type="email"
+          name="accessEmail"
+          [(ngModel)]="accessEmail"
+          placeholder="Grant access: user@td.com"
+          [disabled]="isSavingAdminAction"
+        >
+        <input
+          type="password"
+          name="accessPassword"
+          [(ngModel)]="accessPassword"
+          placeholder="Temporary password"
+          [disabled]="isSavingAdminAction"
+        >
+        <button type="submit" [disabled]="isSavingAdminAction || !accessEmail || !accessPassword">Grant</button>
+      </form>
+
+      <form class="admin-form" (ngSubmit)="addAnnouncement()">
+        <input
+          type="text"
+          name="announcement"
+          [(ngModel)]="announcementInput"
+          placeholder="Add announcement"
+          [disabled]="isSavingAdminAction"
+        >
+        <button type="submit" [disabled]="isSavingAdminAction || !announcementInput.trim()">Announce</button>
+      </form>
+
+      <p *ngIf="adminMessage" class="admin-message">{{ adminMessage }}</p>
+    </section>
 
     <div class="messages">
       <div

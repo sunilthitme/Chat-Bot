@@ -10,9 +10,24 @@ mvn spring-boot:run
 
 ## Ask API
 
+First login:
+
+```http
+POST http://localhost:8080/api/auth/login
+Content-Type: application/json
+
+{
+  "email": "admin@td.com",
+  "password": "admin123"
+}
+```
+
+Then ask:
+
 ```http
 POST http://localhost:8080/api/chat/ask
 Content-Type: application/json
+X-User-Token: token-from-login
 
 {
   "message": "How to create RITM?"
@@ -37,3 +52,12 @@ spring.datasource.username=root
 spring.datasource.password=your_password
 spring.jpa.hibernate.ddl-auto=update
 ```
+
+## Demo Users
+
+- Admin: `admin@td.com` / `admin123`
+- User: `user@td.com` / `user123`
+
+## Logs
+
+All backend logs are written to `system.out.logs` in this backend folder.

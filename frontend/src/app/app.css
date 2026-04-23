@@ -2,7 +2,102 @@
   min-height: 100vh;
   display: grid;
   place-items: center;
-  padding: 24px;
+  padding: 64px 24px 24px;
+}
+
+.announcement-bar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 10;
+  width: 100%;
+  overflow: hidden;
+  background: #0f766e;
+  color: #ffffff;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.announcement-text {
+  display: inline-block;
+  min-width: 100%;
+  padding: 10px 0;
+  white-space: nowrap;
+  animation: scroll-announcement 18s linear infinite;
+  font-weight: 700;
+}
+
+@keyframes scroll-announcement {
+  from {
+    transform: translateX(100%);
+  }
+
+  to {
+    transform: translateX(-100%);
+  }
+}
+
+.login-panel {
+  width: min(440px, 100%);
+  padding: 28px;
+  background: #ffffff;
+  border: 1px solid #d9e1ea;
+  border-radius: 8px;
+  box-shadow: 0 18px 45px rgba(31, 41, 55, 0.14);
+}
+
+.login-panel h1 {
+  margin: 0;
+  font-size: 26px;
+}
+
+.login-panel p {
+  margin: 8px 0 0;
+  color: #64748b;
+}
+
+.login-form {
+  display: grid;
+  gap: 12px;
+  margin-top: 22px;
+}
+
+.login-form input,
+.admin-form input {
+  min-width: 0;
+  height: 44px;
+  padding: 0 14px;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  outline: none;
+}
+
+.login-form input:focus,
+.admin-form input:focus {
+  border-color: #2563eb;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.18);
+}
+
+.login-form button,
+.admin-form button,
+.logout-button {
+  height: 44px;
+  padding: 0 18px;
+  border: 0;
+  border-radius: 8px;
+  background: #2563eb;
+  color: #ffffff;
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.error-message,
+.admin-message {
+  color: #b91c1c;
+  font-weight: 700;
+}
+
+.demo-help {
+  font-size: 13px;
 }
 
 .chat-window {
@@ -39,14 +134,32 @@
   font-size: 14px;
 }
 
-.status {
+.logout-button {
   flex: 0 0 auto;
-  padding: 6px 10px;
-  border-radius: 999px;
-  background: #16a34a;
-  color: #ffffff;
-  font-size: 13px;
-  font-weight: 700;
+  background: #475569;
+}
+
+.admin-panel {
+  display: grid;
+  gap: 10px;
+  padding: 14px 16px;
+  background: #f1f5f9;
+  border-bottom: 1px solid #d9e1ea;
+}
+
+.admin-form {
+  display: grid;
+  grid-template-columns: 1fr 180px auto;
+  gap: 10px;
+}
+
+.admin-form + .admin-form {
+  grid-template-columns: 1fr auto;
+}
+
+.admin-message {
+  margin: 0;
+  font-size: 14px;
 }
 
 .messages {
@@ -129,14 +242,18 @@
 }
 
 .chat-form button:disabled,
-.chat-form input:disabled {
+.chat-form input:disabled,
+.login-form button:disabled,
+.login-form input:disabled,
+.admin-form button:disabled,
+.admin-form input:disabled {
   cursor: not-allowed;
   opacity: 0.65;
 }
 
 @media (max-width: 560px) {
   .page {
-    padding: 0;
+    padding: 42px 0 0;
   }
 
   .chat-window {
@@ -158,6 +275,11 @@
   }
 
   .chat-form {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-form,
+  .admin-form + .admin-form {
     grid-template-columns: 1fr;
   }
 }
