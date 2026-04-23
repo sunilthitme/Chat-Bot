@@ -1,0 +1,40 @@
+<main class="page">
+  <section class="chat-window" aria-label="Internal chatbot">
+    <header class="chat-header">
+      <div>
+        <h1>Internal Chatbot</h1>
+        <p>Application help desk</p>
+      </div>
+      <span class="status">Online</span>
+    </header>
+
+    <div class="messages">
+      <div
+        *ngFor="let message of messages"
+        class="message-row"
+        [class.user-row]="message.sender === 'user'"
+        [class.bot-row]="message.sender === 'bot'"
+      >
+        <div class="message-bubble">
+          {{ message.text }}
+        </div>
+      </div>
+
+      <div *ngIf="isLoading" class="message-row bot-row">
+        <div class="message-bubble loading">Typing...</div>
+      </div>
+    </div>
+
+    <form class="chat-form" (ngSubmit)="sendMessage()">
+      <input
+        type="text"
+        name="message"
+        [(ngModel)]="userInput"
+        placeholder="Ask: How to create RITM?"
+        autocomplete="off"
+        [disabled]="isLoading"
+      >
+      <button type="submit" [disabled]="isLoading || !userInput.trim()">Send</button>
+    </form>
+  </section>
+</main>
