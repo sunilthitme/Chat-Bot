@@ -1,5 +1,5 @@
 import { CommonModule } from '@angular/common';
-import { Component } from '@angular/core';
+import { ChangeDetectorRef, Component } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { finalize, timeout } from 'rxjs';
 import { AnnouncementService } from './announcement.service';
@@ -53,7 +53,8 @@ export class AppComponent {
   constructor(
     private readonly chatService: ChatService,
     private readonly authService: AuthService,
-    private readonly announcementService: AnnouncementService
+    private readonly announcementService: AnnouncementService,
+    private readonly changeDetectorRef: ChangeDetectorRef
   ) {
     this.loadAnnouncement();
   }
@@ -130,6 +131,7 @@ export class AppComponent {
       if (this.loginAttemptId === currentAttemptId) {
         this.isLoggingIn = false;
         this.loginAbortController = null;
+        this.changeDetectorRef.detectChanges();
       }
     }
   }
@@ -144,6 +146,7 @@ export class AppComponent {
     this.loginAbortController = null;
     this.isLoggingIn = false;
     this.loginError = 'Login cancelled. Please try again.';
+    this.changeDetectorRef.detectChanges();
   }
 
   logout(): void {
@@ -256,6 +259,7 @@ export class AppComponent {
     localStorage.setItem('chatbotRole', response.role);
     this.loginEmail = '';
     this.loginPassword = '';
+    this.changeDetectorRef.detectChanges();
   }
 
   private isValidTdEmail(email: string): boolean {
