@@ -23,6 +23,7 @@ interface ChatMessage {
 export class AppComponent {
   private readonly chatTimeoutMs = 10_000;
   private readonly loginTimeoutMs = 5_000;
+  private loginAttemptId = 0;
 
   userInput = '';
   loginEmail = '';
@@ -66,21 +67,47 @@ export class AppComponent {
   login(): void {
     this.loginError = '';
     const email = this.loginEmail.trim().toLowerCase();
+    const password = this.loginPassword;
 
     if (!this.isValidTdEmail(email)) {
       this.loginError = 'Please enter a valid td.com email address.';
       return;
     }
 
+    if (!password) {
+      this.loginError = 'Password is required.';
+      return;
+    }
+
+    const currentAttemptId = ++this.loginAttemptId;
     this.isLoggingIn = true;
-    this.authService.login(email, this.loginPassword)
+    window.setTimeout(() => {
+      if (this.isLoggingIn && this.loginAttemptId === currentAttemptId) {
+        this.isLoggingIn = false;
+        this.loginError = 'Login took too long. Restart backend and refresh this page.';
+        this.chatService.logClientError(`Login UI timeout after ${this.loginTimeoutMs} ms for email: ${email}`);
+      }
+    }, this.loginTimeoutMs);
+
+    this.authService.login(email, password)
       .pipe(
         timeout(this.loginTimeoutMs),
-        finalize(() => (this.isLoggingIn = false))
+        finalize(() => {
+          if (this.loginAttemptId === currentAttemptId) {
+            this.isLoggingIn = false;
+          }
+        })
       )
       .subscribe({
-        next: (response) => this.saveSession(response),
+        next: (response) => {
+          if (this.loginAttemptId === currentAttemptId) {
+            this.saveSession(response);
+          }
+        },
         error: (error) => {
+          if (this.loginAttemptId !== currentAttemptId) {
+            return;
+          }
           const isTimeout = error?.name === 'TimeoutError';
           if (isTimeout) {
             this.chatService.logClientError(`Login response exceeded ${this.loginTimeoutMs} ms for email: ${email}`);
