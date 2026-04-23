@@ -131,7 +131,7 @@ export class AppComponent {
       if (this.loginAttemptId === currentAttemptId) {
         this.isLoggingIn = false;
         this.loginAbortController = null;
-        this.changeDetectorRef.detectChanges();
+        this.refreshView();
       }
     }
   }
@@ -146,7 +146,7 @@ export class AppComponent {
     this.loginAbortController = null;
     this.isLoggingIn = false;
     this.loginError = 'Login cancelled. Please try again.';
-    this.changeDetectorRef.detectChanges();
+    this.refreshView();
   }
 
   logout(): void {
@@ -168,13 +168,18 @@ export class AppComponent {
     this.messages.push({ sender: 'user', text: message });
     this.userInput = '';
     this.isLoading = true;
+    this.refreshView();
 
     this.chatService.ask(message, this.token)
       .pipe(timeout(this.chatTimeoutMs))
-      .pipe(finalize(() => (this.isLoading = false)))
+      .pipe(finalize(() => {
+        this.isLoading = false;
+        this.refreshView();
+      }))
       .subscribe({
         next: (response) => {
           this.messages.push({ sender: 'bot', text: response.reply });
+          this.refreshView();
         },
         error: (error) => {
           const isTimeout = error?.name === 'TimeoutError';
@@ -187,6 +192,7 @@ export class AppComponent {
               ? 'Response is taking more than 10 seconds. Please try again.'
               : 'Backend is not reachable. Please make sure Spring Boot is running.'
           });
+          this.refreshView();
         }
       });
   }
@@ -201,16 +207,22 @@ export class AppComponent {
     }
 
     this.isSavingAdminAction = true;
+    this.refreshView();
     this.authService.grantAccess(email, this.accessPassword, this.token)
-      .pipe(finalize(() => (this.isSavingAdminAction = false)))
+      .pipe(finalize(() => {
+        this.isSavingAdminAction = false;
+        this.refreshView();
+      }))
       .subscribe({
         next: () => {
           this.adminMessage = `Access granted to ${email}.`;
           this.accessEmail = '';
           this.accessPassword = '';
+          this.refreshView();
         },
         error: () => {
           this.adminMessage = 'Unable to grant access. Please check admin login.';
+          this.refreshView();
         }
       });
   }
@@ -225,16 +237,22 @@ export class AppComponent {
     }
 
     this.isSavingAdminAction = true;
+    this.refreshView();
     this.announcementService.add(message, this.token)
-      .pipe(finalize(() => (this.isSavingAdminAction = false)))
+      .pipe(finalize(() => {
+        this.isSavingAdminAction = false;
+        this.refreshView();
+      }))
       .subscribe({
         next: (response) => {
           this.announcement = response.message;
           this.announcementInput = '';
           this.adminMessage = 'Announcement added.';
+          this.refreshView();
         },
         error: () => {
           this.adminMessage = 'Unable to add announcement. Please check admin login.';
+          this.refreshView();
         }
       });
   }
@@ -243,9 +261,11 @@ export class AppComponent {
     this.announcementService.getActive().subscribe({
       next: (response) => {
         this.announcement = response.message;
+        this.refreshView();
       },
       error: () => {
         this.chatService.logClientError('Unable to load active announcement');
+        this.refreshView();
       }
     });
   }
@@ -259,6 +279,10 @@ export class AppComponent {
     localStorage.setItem('chatbotRole', response.role);
     this.loginEmail = '';
     this.loginPassword = '';
+    this.refreshView();
+  }
+
+  private refreshView(): void {
     this.changeDetectorRef.detectChanges();
   }
 
