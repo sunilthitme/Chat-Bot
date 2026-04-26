@@ -94,6 +94,30 @@ Response:
 }
 ```
 
+## Free AI Fallback
+
+This chatbot can also use a free local Ollama model when the database does not find a matching answer.
+
+1. Install [Ollama](https://ollama.com/)
+2. Pull a free model:
+
+```bash
+ollama pull llama3.1
+```
+
+3. Start Ollama locally
+4. Start this backend normally
+
+Default AI settings:
+
+```properties
+chatbot.ai.enabled=true
+chatbot.ai.ollama-url=http://localhost:11434/api/generate
+chatbot.ai.model=llama3.1
+```
+
+The chatbot still searches the database first. Ollama is only used as a fallback.
+
 ## Phase 2 Improvements
 
 1. AI NLP search with embeddings or semantic similarity.

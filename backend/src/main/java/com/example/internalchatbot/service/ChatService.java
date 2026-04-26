@@ -19,9 +19,11 @@ public class ChatService {
     private static final int MAX_MATCHES = 1;
 
     private final ChatQuestionRepository chatQuestionRepository;
+    private final OllamaAiService ollamaAiService;
 
-    public ChatService(ChatQuestionRepository chatQuestionRepository) {
+    public ChatService(ChatQuestionRepository chatQuestionRepository, OllamaAiService ollamaAiService) {
         this.chatQuestionRepository = chatQuestionRepository;
+        this.ollamaAiService = ollamaAiService;
     }
 
     public String ask(String message) {
@@ -41,12 +43,12 @@ public class ChatService {
             return directMatches.getFirst().getAnswer();
         }
 
-        String reply = findByImportantWords(normalizedMessage);
+        String reply = findByImportantWords(message, normalizedMessage);
         logIfSlow(startTime);
         return reply;
     }
 
-    private String findByImportantWords(String normalizedMessage) {
+    private String findByImportantWords(String originalMessage, String normalizedMessage) {
         List<String> words = Arrays.stream(normalizedMessage.split(" "))
                 .filter(word -> word.length() > 2)
                 .toList();
@@ -64,6 +66,12 @@ public class ChatService {
         }
 
         log.warn("No chat answer found for message. normalizedMessage={}", normalizedMessage);
+        String aiReply = ollamaAiService.generateReply(originalMessage);
+        if (!aiReply.isBlank()) {
+            log.info("Ollama AI fallback answer returned");
+            return aiReply;
+        }
+
         return NOT_FOUND_REPLY;
     }
 
