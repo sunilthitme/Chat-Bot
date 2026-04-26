@@ -24,7 +24,7 @@ public class OllamaAiService {
     private static final Logger log = LoggerFactory.getLogger(OllamaAiService.class);
 
     private final ChatQuestionRepository chatQuestionRepository;
-    private final ObjectMapper objectMapper;
+    private final ObjectMapper objectMapper = new ObjectMapper();
     private final HttpClient httpClient;
 
     @Value("${chatbot.ai.enabled:true}")
@@ -39,9 +39,8 @@ public class OllamaAiService {
     @Value("${chatbot.ai.timeout-seconds:20}")
     private long timeoutSeconds;
 
-    public OllamaAiService(ChatQuestionRepository chatQuestionRepository, ObjectMapper objectMapper) {
+    public OllamaAiService(ChatQuestionRepository chatQuestionRepository) {
         this.chatQuestionRepository = chatQuestionRepository;
-        this.objectMapper = objectMapper;
         this.httpClient = HttpClient.newBuilder()
                 .connectTimeout(Duration.ofSeconds(5))
                 .build();
