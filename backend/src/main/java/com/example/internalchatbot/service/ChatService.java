@@ -36,9 +36,9 @@ public class ChatService {
                 PageRequest.of(0, MAX_MATCHES)
         );
         if (!directMatches.isEmpty()) {
-            log.info("Direct chat match found. questionId={}", directMatches.getFirst().getId());
+            log.info("Direct chat match found. questionId={}", directMatches.get(0).getId());
             logIfSlow(startTime);
-            return directMatches.getFirst().getAnswer();
+            return directMatches.get(0).getAnswer();
         }
 
         String reply = findByImportantWords(normalizedMessage);
@@ -58,8 +58,8 @@ public class ChatService {
                     PageRequest.of(0, MAX_MATCHES)
             );
             if (!matches.isEmpty()) {
-                log.info("Keyword chat match found. keyword={}, questionId={}", word, matches.getFirst().getId());
-                return matches.getFirst().getAnswer();
+                log.info("Keyword chat match found. keyword={}, questionId={}", word, matches.get(0).getId());
+                return matches.get(0).getAnswer();
             }
         }
 
