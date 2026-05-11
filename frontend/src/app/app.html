@@ -8,9 +8,9 @@
       <span class="status">Online</span>
     </header>
 
-    <div class="messages">
+    <div class="messages" #messagesContainer>
       <div
-        *ngFor="let message of messages"
+        *ngFor="let message of messages()"
         class="message-row"
         [class.user-row]="message.sender === 'user'"
         [class.bot-row]="message.sender === 'bot'"
@@ -20,7 +20,7 @@
         </div>
       </div>
 
-      <div *ngIf="isLoading" class="message-row bot-row">
+      <div *ngIf="isLoading()" class="message-row bot-row">
         <div class="message-bubble loading">Typing...</div>
       </div>
     </div>
@@ -32,9 +32,9 @@
         [(ngModel)]="userInput"
         placeholder="Ask: How to create RITM?"
         autocomplete="off"
-        [disabled]="isLoading"
+        [disabled]="isLoading()"
       >
-      <button type="submit" [disabled]="isLoading || !userInput.trim()">Send</button>
+      <button type="submit" [disabled]="isLoading() || !userInput.trim()">Send</button>
     </form>
   </section>
 </main>
