@@ -50,6 +50,20 @@ mvn spring-boot:run
 
 Backend URL: `http://localhost:8080`
 
+## Optional Ollama LLM
+
+Ollama is disabled by default so the chatbot keeps using stored database answers.
+
+To enable Ollama, start Ollama locally and update `backend/src/main/resources/application.properties`:
+
+```properties
+ollama.enabled=true
+ollama.url=http://localhost:11434/api/generate
+ollama.model=llama3.2
+```
+
+When enabled, the backend asks Ollama first. If Ollama is disabled or unavailable, it falls back to the existing database Q&A matching.
+
 ## Run Frontend
 
 ```bash

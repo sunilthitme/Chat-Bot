@@ -8,6 +8,18 @@ Simple Spring Boot REST API for an internal chatbot that answers questions from 
 mvn spring-boot:run
 ```
 
+## Optional Ollama LLM
+
+Ollama is disabled by default. Enable it in `src/main/resources/application.properties`:
+
+```properties
+ollama.enabled=true
+ollama.url=http://localhost:11434/api/generate
+ollama.model=llama3.2
+```
+
+When enabled, chat requests are sent to Ollama first. If Ollama is disabled or unavailable, the backend uses the stored Q&A answers.
+
 ## Ask API
 
 ```http
