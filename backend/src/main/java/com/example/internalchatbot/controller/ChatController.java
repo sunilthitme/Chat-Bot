@@ -13,7 +13,7 @@ import org.springframework.web.bind.annotation.RestController;
 // REST controller exposes chatbot APIs for the frontend.
 @RestController
 @RequestMapping("/api/chat")
-@CrossOrigin(origins = "http://localhost:4200")
+@CrossOrigin(origins = "${app.cors.allowed-origin}")
 public class ChatController {
 
     private final ChatService chatService;

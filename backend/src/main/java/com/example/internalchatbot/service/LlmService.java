@@ -13,6 +13,18 @@ import java.util.Map;
 @Service
 public class LlmService {
 
+    private static final String CONTEXT_PROMPT_TEMPLATE = """
+            You are an internal help desk chatbot.
+            Use the internal answer as the source of truth.
+            Rewrite it as a clear, helpful response to the user.
+
+            User question:
+            %s
+
+            Internal answer:
+            %s
+            """;
+
     private final boolean enabled;
     private final String ollamaUrl;
     private final String model;
@@ -55,5 +67,10 @@ public class LlmService {
         Object generatedResponse = responseBody == null ? null : responseBody.get("response");
 
         return generatedResponse == null ? "" : generatedResponse.toString();
+    }
+
+    public String generateResponseWithContext(String userQuestion, String internalAnswer) {
+        String prompt = CONTEXT_PROMPT_TEMPLATE.formatted(userQuestion, internalAnswer);
+        return generateResponse(prompt);
     }
 }

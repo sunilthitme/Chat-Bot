@@ -26,15 +26,17 @@ public class ChatService {
     }
 
     public String ask(String message) {
-        if (llmService.isEnabled()) {
-            String llmReply = askLlm(message);
-            if (!llmReply.isBlank()) {
-                return llmReply;
-            }
+        String normalizedMessage = normalize(message);
+        String storedAnswer = findStoredAnswer(normalizedMessage);
+
+        if (storedAnswer != null) {
+            return improveStoredAnswerWithLlm(message, storedAnswer);
         }
 
-        String normalizedMessage = normalize(message);
+        return answerWithLlm(message);
+    }
 
+    private String findStoredAnswer(String normalizedMessage) {
         List<ChatQuestion> directMatches = chatQuestionRepository.searchByQuestionOrKeywords(normalizedMessage);
         if (!directMatches.isEmpty()) {
             return directMatches.getFirst().getAnswer();
@@ -55,15 +57,34 @@ public class ChatService {
             }
         }
 
-        return NOT_FOUND_REPLY;
+        return null;
     }
 
-    private String askLlm(String message) {
+    private String improveStoredAnswerWithLlm(String message, String storedAnswer) {
+        if (!llmService.isEnabled()) {
+            return storedAnswer;
+        }
+
         try {
-            return llmService.generateResponse(message);
+            String llmReply = llmService.generateResponseWithContext(message, storedAnswer);
+            return llmReply.isBlank() ? storedAnswer : llmReply;
         } catch (RestClientException ex) {
-            log.warn("Ollama request failed. Falling back to stored chat answers.", ex);
-            return "";
+            log.warn("Ollama request failed. Returning stored chat answer.", ex);
+            return storedAnswer;
+        }
+    }
+
+    private String answerWithLlm(String message) {
+        if (!llmService.isEnabled()) {
+            return NOT_FOUND_REPLY;
+        }
+
+        try {
+            String llmReply = llmService.generateResponse(message);
+            return llmReply.isBlank() ? NOT_FOUND_REPLY : llmReply;
+        } catch (RestClientException ex) {
+            log.warn("Ollama request failed and no stored chat answer was found.", ex);
+            return NOT_FOUND_REPLY;
         }
     }
 

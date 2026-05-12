@@ -13,6 +13,7 @@ internal-chatbot/
       InternalChatbotApplication.java
       controller/
         ChatController.java
+        LlmController.java
       dto/
         ChatRequest.java
         ChatResponse.java
@@ -22,6 +23,7 @@ internal-chatbot/
         ChatQuestionRepository.java
       service/
         ChatService.java
+        LlmService.java
     src/main/resources/
       application.properties
       data.sql
@@ -62,7 +64,12 @@ ollama.url=http://localhost:11434/api/generate
 ollama.model=llama3.2
 ```
 
-When enabled, the backend asks Ollama first. If Ollama is disabled or unavailable, it falls back to the existing database Q&A matching.
+Chat requests always check the internal database first.
+
+- If the database has a matching answer and Ollama is enabled, Ollama rewrites that stored answer into a more helpful final response.
+- If the database has a matching answer and Ollama is disabled or unavailable, the stored answer is returned.
+- If the database has no matching answer and Ollama is enabled, Ollama answers directly.
+- If the database has no matching answer and Ollama is disabled or unavailable, the default not-found response is returned.
 
 ## Run Frontend
 
@@ -92,6 +99,19 @@ Response:
   "reply": "Steps to create RITM: 1. Open the service portal..."
 }
 ```
+
+Direct Ollama endpoint:
+
+```http
+POST /api/llm/generate
+Content-Type: application/json
+
+{
+  "message": "Explain password reset steps"
+}
+```
+
+This endpoint returns `503 Service Unavailable` when `ollama.enabled=false` or Ollama cannot be reached.
 
 ## Phase 2 Improvements
 

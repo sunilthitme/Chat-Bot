@@ -18,7 +18,12 @@ ollama.url=http://localhost:11434/api/generate
 ollama.model=llama3.2
 ```
 
-When enabled, chat requests are sent to Ollama first. If Ollama is disabled or unavailable, the backend uses the stored Q&A answers.
+Chat requests always check the internal database first.
+
+- If the database has a matching answer and Ollama is enabled, Ollama rewrites that stored answer into a more helpful final response.
+- If the database has a matching answer and Ollama is disabled or unavailable, the stored answer is returned.
+- If the database has no matching answer and Ollama is enabled, Ollama answers directly.
+- If the database has no matching answer and Ollama is disabled or unavailable, the default not-found response is returned.
 
 ## Ask API
 
@@ -30,6 +35,19 @@ Content-Type: application/json
   "message": "How to create RITM?"
 }
 ```
+
+## Direct LLM API
+
+```http
+POST http://localhost:8080/api/llm/generate
+Content-Type: application/json
+
+{
+  "message": "Explain password reset steps"
+}
+```
+
+This endpoint returns `503 Service Unavailable` when `ollama.enabled=false` or Ollama cannot be reached.
 
 ## H2 Console
 
