@@ -81,6 +81,11 @@ npm start
 
 Frontend URL: `http://localhost:4200`
 
+The chat header has two response modes:
+
+- Internal: calls `/api/chat/ask`, which checks the internal DB first and uses Ollama according to backend settings.
+- LLM: calls `/api/llm/generate` directly and requires `ollama.enabled=true`.
+
 ## API
 
 ```http

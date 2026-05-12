@@ -5,7 +5,29 @@
         <h1>Internal Chatbot</h1>
         <p>Application help desk</p>
       </div>
-      <span class="status">Online</span>
+      <div class="header-actions">
+        <span class="status">Online</span>
+        <div class="mode-toggle" aria-label="Response mode">
+          <button
+            type="button"
+            [class.active]="responseMode() === 'internal'"
+            [attr.aria-pressed]="responseMode() === 'internal'"
+            [disabled]="isLoading()"
+            (click)="setResponseMode('internal')"
+          >
+            Internal
+          </button>
+          <button
+            type="button"
+            [class.active]="responseMode() === 'llm'"
+            [attr.aria-pressed]="responseMode() === 'llm'"
+            [disabled]="isLoading()"
+            (click)="setResponseMode('llm')"
+          >
+            LLM
+          </button>
+        </div>
+      </div>
     </header>
 
     <div class="messages" #messagesContainer>
@@ -30,7 +52,7 @@
         type="text"
         name="message"
         [(ngModel)]="userInput"
-        placeholder="Ask: How to create RITM?"
+        [placeholder]="placeholderText()"
         autocomplete="off"
         [disabled]="isLoading()"
       >
