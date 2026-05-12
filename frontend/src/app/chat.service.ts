@@ -15,18 +15,12 @@ export interface ChatResponse {
   providedIn: 'root'
 })
 export class ChatService {
-  private readonly chatUrl = 'http://localhost:8080/api/chat/ask';
-  private readonly llmUrl = 'http://localhost:8080/api/llm/generate';
+  private readonly apiUrl = 'http://localhost:8080/api/chat/ask';
 
   constructor(private readonly http: HttpClient) {}
 
   ask(message: string): Observable<ChatResponse> {
     const request: ChatRequest = { message };
-    return this.http.post<ChatResponse>(this.chatUrl, request);
-  }
-
-  askLlm(message: string): Observable<ChatResponse> {
-    const request: ChatRequest = { message };
-    return this.http.post<ChatResponse>(this.llmUrl, request);
+    return this.http.post<ChatResponse>(this.apiUrl, request);
   }
 }

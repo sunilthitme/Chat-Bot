@@ -39,12 +39,6 @@
   font-size: 14px;
 }
 
-.header-actions {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
 .status {
   flex: 0 0 auto;
   padding: 6px 10px;
@@ -53,36 +47,6 @@
   color: #ffffff;
   font-size: 13px;
   font-weight: 700;
-}
-
-.mode-toggle {
-  display: grid;
-  grid-template-columns: repeat(2, 74px);
-  gap: 2px;
-  padding: 3px;
-  border: 1px solid rgba(203, 213, 225, 0.35);
-  border-radius: 8px;
-  background: rgba(15, 23, 42, 0.3);
-}
-
-.mode-toggle button {
-  height: 32px;
-  border: 0;
-  border-radius: 6px;
-  background: transparent;
-  color: #cbd5e1;
-  cursor: pointer;
-  font-weight: 700;
-}
-
-.mode-toggle button.active {
-  background: #ffffff;
-  color: #1f2937;
-}
-
-.mode-toggle button:disabled {
-  cursor: not-allowed;
-  opacity: 0.65;
 }
 
 .messages {
@@ -182,14 +146,7 @@
   }
 
   .chat-header {
-    align-items: flex-start;
-    flex-direction: column;
     padding: 16px;
-  }
-
-  .header-actions {
-    width: 100%;
-    justify-content: space-between;
   }
 
   .messages {
