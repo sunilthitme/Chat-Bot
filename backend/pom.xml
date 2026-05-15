@@ -19,8 +19,8 @@
 
     <properties>
         <java.version>21</java.version>
-        <langchain4j.version>1.10.0</langchain4j.version>
-        <langchain4j.chroma.version>1.10.0-beta18</langchain4j.chroma.version>
+        <langchain4j.version>1.14.1</langchain4j.version>
+        <langchain4j.chroma.version>1.14.1-beta24</langchain4j.chroma.version>
     </properties>
 
     <dependencies>

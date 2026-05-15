@@ -8,10 +8,10 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import dev.langchain4j.data.document.Metadata;
 import dev.langchain4j.data.embedding.Embedding;
 import dev.langchain4j.data.segment.TextSegment;
-import dev.langchain4j.store.embedding.chroma.ChromaEmbeddingStore;
+import dev.langchain4j.store.embedding.EmbeddingMatch;
+import dev.langchain4j.store.embedding.EmbeddingSearchRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.util.Comparator;
@@ -27,24 +27,15 @@ public class VectorStoreService {
 
     private final EmbeddingMetadataRepository embeddingMetadataRepository;
     private final ObjectMapper objectMapper;
-    private final boolean chromaEnabled;
-    private final ChromaEmbeddingStore chromaEmbeddingStore;
+    private final ChromaEmbeddingStoreProvider chromaEmbeddingStoreProvider;
 
     public VectorStoreService(
             EmbeddingMetadataRepository embeddingMetadataRepository,
-            @Value("${chroma.enabled:true}") boolean chromaEnabled,
-            @Value("${chroma.base-url}") String chromaBaseUrl,
-            @Value("${chroma.collection-name}") String collectionName
+            ChromaEmbeddingStoreProvider chromaEmbeddingStoreProvider
     ) {
         this.embeddingMetadataRepository = embeddingMetadataRepository;
-        this.chromaEnabled = chromaEnabled;
+        this.chromaEmbeddingStoreProvider = chromaEmbeddingStoreProvider;
         this.objectMapper = new ObjectMapper();
-        this.chromaEmbeddingStore = chromaEnabled
-                ? ChromaEmbeddingStore.builder()
-                        .baseUrl(chromaBaseUrl.replaceAll("/+$", ""))
-                        .collectionName(collectionName)
-                        .build()
-                : null;
     }
 
     public EmbeddingMetadata store(
@@ -81,15 +72,18 @@ public class VectorStoreService {
             return List.of();
         }
 
-        List<VectorSearchResult> localResults = embeddingMetadataRepository
+        List<VectorSearchResult> chromaResults = searchChroma(queryVector, topK);
+        if (!chromaResults.isEmpty()) {
+            return chromaResults;
+        }
+
+        return embeddingMetadataRepository
                 .findTop300ByPrivateModeFalseOrderByCreatedAtDesc()
                 .stream()
                 .map(metadata -> toSearchResult(metadata, queryVector))
                 .sorted(Comparator.comparingDouble(VectorSearchResult::score).reversed())
                 .limit(topK)
                 .toList();
-
-        return localResults;
     }
 
     private VectorSearchResult toSearchResult(EmbeddingMetadata metadata, List<Double> queryVector) {
@@ -104,30 +98,91 @@ public class VectorStoreService {
     }
 
     private void syncToChroma(EmbeddingMetadata metadata, List<Double> vector) {
-        if (!chromaEnabled || vector.isEmpty()) {
+        if (vector.isEmpty()) {
             return;
         }
 
-        try {
-            Embedding embedding = Embedding.from(vector.stream()
-                    .map(Double::floatValue)
-                    .toList());
-            TextSegment textSegment = TextSegment.from(
-                    metadata.getContentChunk(),
-                    Metadata.from(Map.of(
-                            "sourceName", metadata.getSourceName(),
-                            "sourceType", metadata.getSourceType(),
-                            "embeddingId", metadata.getId()
-                    ))
-            );
-            chromaEmbeddingStore.addAll(
-                    List.of("embedding-" + metadata.getId()),
-                    List.of(embedding),
-                    List.of(textSegment)
-            );
-        } catch (RuntimeException ex) {
-            log.warn("ChromaDB sync failed. Local vector metadata remains available.", ex);
+        chromaEmbeddingStoreProvider.getStore().ifPresent(embeddingStore -> {
+            try {
+                embeddingStore.addAll(
+                        List.of("embedding-" + metadata.getId()),
+                        List.of(toEmbedding(vector)),
+                        List.of(toTextSegment(metadata))
+                );
+            } catch (RuntimeException ex) {
+                chromaEmbeddingStoreProvider.markUnavailable(ex);
+                log.warn("ChromaDB sync failed. Local vector metadata remains available.", ex);
+            }
+        });
+    }
+
+    private List<VectorSearchResult> searchChroma(List<Double> queryVector, int topK) {
+        return chromaEmbeddingStoreProvider.getStore()
+                .map(embeddingStore -> {
+                    try {
+                        EmbeddingSearchRequest request = EmbeddingSearchRequest.builder()
+                                .queryEmbedding(toEmbedding(queryVector))
+                                .maxResults(topK)
+                                .build();
+                        return embeddingStore.search(request).matches()
+                                .stream()
+                                .map(this::toSearchResult)
+                                .toList();
+                    } catch (RuntimeException ex) {
+                        chromaEmbeddingStoreProvider.markUnavailable(ex);
+                        log.warn("ChromaDB search failed. Falling back to local vector metadata.", ex);
+                        return List.<VectorSearchResult>of();
+                    }
+                })
+                .orElse(List.of());
+    }
+
+    private VectorSearchResult toSearchResult(EmbeddingMatch<TextSegment> match) {
+        TextSegment textSegment = match.embedded();
+        Metadata metadata = textSegment.metadata();
+        return new VectorSearchResult(
+                readEmbeddingId(match.embeddingId(), metadata),
+                defaultIfBlank(metadata.getString("sourceName"), "chroma"),
+                defaultIfBlank(metadata.getString("sourceType"), "knowledge"),
+                textSegment.text(),
+                match.score() == null ? 0 : match.score()
+        );
+    }
+
+    private TextSegment toTextSegment(EmbeddingMetadata metadata) {
+        return TextSegment.from(
+                metadata.getContentChunk(),
+                Metadata.from(Map.of(
+                        "sourceName", metadata.getSourceName(),
+                        "sourceType", metadata.getSourceType(),
+                        "embeddingId", metadata.getId()
+                ))
+        );
+    }
+
+    private Embedding toEmbedding(List<Double> vector) {
+        return Embedding.from(vector.stream()
+                .map(Double::floatValue)
+                .toList());
+    }
+
+    private Long readEmbeddingId(String embeddingId, Metadata metadata) {
+        Long metadataId = metadata.getLong("embeddingId");
+        if (metadataId != null) {
+            return metadataId;
         }
+        if (embeddingId != null && embeddingId.startsWith("embedding-")) {
+            try {
+                return Long.parseLong(embeddingId.substring("embedding-".length()));
+            } catch (NumberFormatException ignored) {
+                return null;
+            }
+        }
+        return null;
+    }
+
+    private String defaultIfBlank(String value, String fallback) {
+        return value == null || value.isBlank() ? fallback : value;
     }
 
     private String toJson(List<Double> vector) {

@@ -79,7 +79,7 @@ backend/src/main/java/com/example/internalchatbot/
 
 `IncidentController` delegates ServiceNow analysis to `IncidentAnalysisService`, which prompts Ollama for root cause, troubleshooting steps, and likely resolution.
 
-`EmbeddingService` uses LangChain4j `OllamaEmbeddingModel` with `nomic-embed-text`. `VectorStoreService` saves local vector metadata and syncs chunks to ChromaDB when `chroma.enabled=true`.
+`EmbeddingService` uses LangChain4j `OllamaEmbeddingModel` with `nomic-embed-text`. `VectorStoreService` saves local vector metadata and syncs chunks to ChromaDB API V2 when `chroma.enabled=true`. Chroma initialization is lazy and health-checked so Spring Boot startup does not fail when Chroma is unavailable.
 
 ## Database Schema
 
@@ -158,6 +158,12 @@ ollama.temperature=0.2
 rag.top-k=5
 chroma.enabled=true
 chroma.base-url=http://localhost:8000
+chroma.tenant-name=default
+chroma.database-name=default
+chroma.timeout=10s
+chroma.health-check-timeout=2s
+chroma.health-check-retries=3
+chroma.retry-delay=10s
 security.allowed-url-domains=localhost,127.0.0.1,example.com,servicenow.com
 secure-url.login-enabled=false
 ```
