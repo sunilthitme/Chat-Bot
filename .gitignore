@@ -18,3 +18,8 @@ Thumbs.db
 
 # Logs
 *.log
+
+# Local persistent development database
+backend/data/
+*.mv.db
+*.trace.db

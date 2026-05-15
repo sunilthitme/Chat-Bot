@@ -19,6 +19,8 @@
 
     <properties>
         <java.version>21</java.version>
+        <langchain4j.version>1.10.0</langchain4j.version>
+        <langchain4j.chroma.version>1.10.0-beta18</langchain4j.chroma.version>
     </properties>
 
     <dependencies>
@@ -38,6 +40,53 @@
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-validation</artifactId>
+        </dependency>
+
+        <!-- Extracts readable text from uploaded PDF files. -->
+        <dependency>
+            <groupId>org.apache.pdfbox</groupId>
+            <artifactId>pdfbox</artifactId>
+            <version>3.0.7</version>
+        </dependency>
+
+        <!-- Extracts readable text from uploaded DOCX files. -->
+        <dependency>
+            <groupId>org.apache.poi</groupId>
+            <artifactId>poi-ooxml</artifactId>
+            <version>5.5.0</version>
+        </dependency>
+
+        <!-- Reads and cleans accessible URL content. -->
+        <dependency>
+            <groupId>org.jsoup</groupId>
+            <artifactId>jsoup</artifactId>
+            <version>1.22.2</version>
+        </dependency>
+
+        <!-- JSON parsing for Ollama streaming lines and persisted vector values. -->
+        <dependency>
+            <groupId>com.fasterxml.jackson.core</groupId>
+            <artifactId>jackson-databind</artifactId>
+        </dependency>
+
+        <!-- LangChain4j embeddings and Chroma vector-store adapter for RAG. -->
+        <dependency>
+            <groupId>dev.langchain4j</groupId>
+            <artifactId>langchain4j-ollama</artifactId>
+            <version>${langchain4j.version}</version>
+        </dependency>
+
+        <dependency>
+            <groupId>dev.langchain4j</groupId>
+            <artifactId>langchain4j-chroma</artifactId>
+            <version>${langchain4j.chroma.version}</version>
+        </dependency>
+
+        <!-- Supports login-required dynamic URL capture when a browser driver is configured. -->
+        <dependency>
+            <groupId>org.seleniumhq.selenium</groupId>
+            <artifactId>selenium-java</artifactId>
+            <version>4.43.0</version>
         </dependency>
 
         <!-- In-memory database for beginner-friendly local development. -->

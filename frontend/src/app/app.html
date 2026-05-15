@@ -1,12 +1,60 @@
-<main class="page">
+<main class="app-shell">
+  <aside class="sidebar" aria-label="Chat sessions">
+    <button class="new-chat" type="button" (click)="newChat()" [disabled]="isSidebarLoading()">
+      + New chat
+    </button>
+
+    <div class="session-list">
+      <button
+        *ngFor="let session of sessions()"
+        type="button"
+        class="session-item"
+        [class.active]="session.id === currentSessionId()"
+        (click)="selectSession(session)"
+      >
+        <span>{{ session.title }}</span>
+        <small>{{ session.privateMode ? 'Private' : 'Saved' }}</small>
+      </button>
+    </div>
+  </aside>
+
   <section class="chat-window" aria-label="Internal chatbot">
     <header class="chat-header">
       <div>
         <h1>Internal Chatbot</h1>
-        <p>Application help desk</p>
+        <p>DB-first RAG assistant</p>
       </div>
-      <span class="status">Online</span>
+      <div class="header-actions">
+        <button
+          class="private-toggle"
+          type="button"
+          [class.active]="privateMode()"
+          [attr.aria-pressed]="privateMode()"
+          (click)="togglePrivateMode()"
+        >
+          {{ privateMode() ? 'Private on' : 'Private off' }}
+        </button>
+        <span class="status">Online</span>
+      </div>
     </header>
+
+    <div class="tool-strip">
+      <label class="upload-button">
+        Upload
+        <input type="file" accept=".pdf,.docx,.txt,.log" (change)="uploadDocument($event)" hidden>
+      </label>
+
+      <form class="url-form" (ngSubmit)="ingestUrl()">
+        <input
+          type="url"
+          name="url"
+          [(ngModel)]="urlInput"
+          placeholder="Read allowed URL"
+          [disabled]="isLoading()"
+        >
+        <button type="submit" [disabled]="isLoading() || !urlInput.trim()">Read</button>
+      </form>
+    </div>
 
     <div class="messages" #messagesContainer>
       <div
@@ -17,20 +65,39 @@
       >
         <div class="message-bubble">
           {{ message.text }}
+          <div *ngIf="message.sources?.length" class="sources">
+            <strong>Sources</strong>
+            <span *ngFor="let source of message.sources">
+              {{ source.sourceName }} - {{ source.sourceType }} - {{ source.score | number:'1.2-2' }}
+            </span>
+          </div>
         </div>
       </div>
 
       <div *ngIf="isLoading()" class="message-row bot-row">
-        <div class="message-bubble loading">Typing...</div>
+        <div class="message-bubble loading">
+          <span></span><span></span><span></span>
+        </div>
       </div>
     </div>
+
+    <form class="incident-form" (ngSubmit)="analyzeIncident()">
+      <textarea
+        name="incident"
+        [(ngModel)]="incidentInput"
+        placeholder="Paste ServiceNow incident details"
+        rows="2"
+        [disabled]="isLoading()"
+      ></textarea>
+      <button type="submit" [disabled]="isLoading() || !incidentInput.trim()">Analyze</button>
+    </form>
 
     <form class="chat-form" (ngSubmit)="sendMessage()">
       <input
         type="text"
         name="message"
         [(ngModel)]="userInput"
-        placeholder="Ask: How to create RITM?"
+        placeholder="Ask about internal knowledge, uploaded docs, URLs, or incidents"
         autocomplete="off"
         [disabled]="isLoading()"
       >

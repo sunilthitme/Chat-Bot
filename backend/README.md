@@ -1,6 +1,6 @@
 # Internal Chatbot Backend
 
-Simple Spring Boot REST API for an internal chatbot that answers questions from database records.
+Spring Boot REST API for a DB-first enterprise chatbot with session memory, private mode, document and URL ingestion, Ollama generation, LangChain4j embeddings, ChromaDB vector sync, and local persisted vector metadata.
 
 ## Run
 
@@ -8,22 +8,21 @@ Simple Spring Boot REST API for an internal chatbot that answers questions from 
 mvn spring-boot:run
 ```
 
-## Optional Ollama LLM
+## Ollama LLM And Embeddings
 
-Ollama is disabled by default. Enable it in `src/main/resources/application.properties`:
+Ollama is enabled by default. Start Ollama and pull both models:
 
-```properties
-ollama.enabled=true
-ollama.url=http://localhost:11434/api/generate
-ollama.model=llama3.2
+```bash
+ollama pull llama3.2
+ollama pull nomic-embed-text
 ```
 
 Chat requests always check the internal database first.
 
-- If the database has a matching answer and Ollama is enabled, Ollama rewrites that stored answer into a more helpful final response.
-- If the database has a matching answer and Ollama is disabled or unavailable, the stored answer is returned.
-- If the database has no matching answer and Ollama is enabled, Ollama answers directly.
-- If the database has no matching answer and Ollama is disabled or unavailable, the default not-found response is returned.
+- If the database has a matching answer, the prompt tells Ollama to prefer it.
+- If the database has no answer, RAG context from stored documents, URLs, and useful prior knowledge is provided.
+- If Ollama is unavailable, the service falls back to the DB answer or the default not-found message.
+- If private mode is enabled, messages and embeddings are not persisted.
 
 ## Ask API
 
@@ -32,8 +31,24 @@ POST http://localhost:8080/api/chat/ask
 Content-Type: application/json
 
 {
-  "message": "How to create RITM?"
+  "message": "How to create RITM?",
+  "sessionId": "",
+  "privateMode": false
 }
+```
+
+Streaming endpoint:
+
+```http
+POST http://localhost:8080/api/chat/ask/stream
+Content-Type: application/json
+```
+
+Document upload and URL ingestion:
+
+```http
+POST http://localhost:8080/api/knowledge/documents
+POST http://localhost:8080/api/knowledge/urls
 ```
 
 ## Direct LLM API
@@ -53,11 +68,11 @@ This endpoint returns `503 Service Unavailable` when `ollama.enabled=false` or O
 
 Open `http://localhost:8080/h2-console`.
 
-- JDBC URL: `jdbc:h2:mem:chatbotdb`
+- JDBC URL: `jdbc:h2:file:./data/chatbotdb`
 - User: `sa`
 - Password: leave empty
 
-## MySQL Later
+## Production Database
 
 Replace the H2 datasource properties in `src/main/resources/application.properties` with:
 
@@ -67,3 +82,5 @@ spring.datasource.username=root
 spring.datasource.password=your_password
 spring.jpa.hibernate.ddl-auto=update
 ```
+
+Reference SQL for the enterprise tables is in `src/main/resources/schema-enterprise.sql`.

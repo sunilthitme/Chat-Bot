@@ -1,17 +1,23 @@
-INSERT INTO chat_questions (question, answer, keywords, created_at) VALUES
-('How to create RITM?',
+INSERT INTO chat_questions (question, answer, keywords, created_at)
+SELECT
+ 'How to create RITM?',
  'Steps to create RITM: 1. Open the service portal. 2. Choose the required catalog item. 3. Fill in the request details. 4. Review the information. 5. Click Submit to create the RITM.',
  'ritm, create ritm, request item, service request',
- CURRENT_TIMESTAMP);
+ CURRENT_TIMESTAMP
+WHERE NOT EXISTS (SELECT 1 FROM chat_questions WHERE question = 'How to create RITM?');
 
-INSERT INTO chat_questions (question, answer, keywords, created_at) VALUES
-('How to reset password?',
+INSERT INTO chat_questions (question, answer, keywords, created_at)
+SELECT
+ 'How to reset password?',
  'Steps to reset password: 1. Open the login page. 2. Click Forgot Password. 3. Enter your registered email or user ID. 4. Verify the OTP or reset link. 5. Create a new password and sign in again.',
  'password reset, forgot password, login issue, reset password',
- CURRENT_TIMESTAMP);
+ CURRENT_TIMESTAMP
+WHERE NOT EXISTS (SELECT 1 FROM chat_questions WHERE question = 'How to reset password?');
 
-INSERT INTO chat_questions (question, answer, keywords, created_at) VALUES
-('How to raise incident?',
+INSERT INTO chat_questions (question, answer, keywords, created_at)
+SELECT
+ 'How to raise incident?',
  'Steps to raise an incident: 1. Open the support portal. 2. Select Raise Incident. 3. Enter the issue summary and description. 4. Choose priority and category. 5. Submit the incident ticket.',
  'incident, raise incident, issue ticket, support ticket',
- CURRENT_TIMESTAMP);
+ CURRENT_TIMESTAMP
+WHERE NOT EXISTS (SELECT 1 FROM chat_questions WHERE question = 'How to raise incident?');

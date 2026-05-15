@@ -1,47 +1,8 @@
 # Internal Chatbot
 
-Simple Angular + Spring Boot internal chatbot.
+Angular + Spring Boot internal chatbot with DB-first answers, Ollama, multi-session memory, private mode, document and URL ingestion, ServiceNow incident analysis, and RAG over persisted enterprise knowledge.
 
-## Complete Project Structure
-
-```text
-internal-chatbot/
-  backend/
-    pom.xml
-    README.md
-    src/main/java/com/example/internalchatbot/
-      InternalChatbotApplication.java
-      controller/
-        ChatController.java
-        LlmController.java
-      dto/
-        ChatRequest.java
-        ChatResponse.java
-      entity/
-        ChatQuestion.java
-      repository/
-        ChatQuestionRepository.java
-      service/
-        ChatService.java
-        LlmService.java
-    src/main/resources/
-      application.properties
-      data.sql
-  frontend/
-    package.json
-    angular.json
-    tsconfig.json
-    tsconfig.app.json
-    src/
-      index.html
-      main.ts
-      styles.css
-      app/
-        app.ts
-        app.html
-        app.css
-        chat.service.ts
-```
+See [docs/enterprise-ai-architecture.md](docs/enterprise-ai-architecture.md) for the module-by-module architecture, API flow, schema, and production recommendations.
 
 ## Run Backend
 
@@ -52,24 +13,29 @@ mvn spring-boot:run
 
 Backend URL: `http://localhost:8080`
 
-## Optional Ollama LLM
+## Ollama And RAG
 
-Ollama is disabled by default so the chatbot keeps using stored database answers.
+Ollama is enabled by default in `backend/src/main/resources/application.properties`.
 
-To enable Ollama, start Ollama locally and update `backend/src/main/resources/application.properties`:
+Start Ollama locally and pull the configured models:
+
+```bash
+ollama pull llama3.2
+ollama pull nomic-embed-text
+```
+
+Important properties:
 
 ```properties
 ollama.enabled=true
-ollama.url=http://localhost:11434/api/generate
+ollama.base-url=http://localhost:11434
 ollama.model=llama3.2
+ollama.embedding-model=nomic-embed-text
+chroma.enabled=true
+chroma.base-url=http://localhost:8000
 ```
 
-Chat requests always check the internal database first.
-
-- If the database has a matching answer and Ollama is enabled, Ollama rewrites that stored answer into a more helpful final response.
-- If the database has a matching answer and Ollama is disabled or unavailable, the stored answer is returned.
-- If the database has no matching answer and Ollama is enabled, Ollama answers directly.
-- If the database has no matching answer and Ollama is disabled or unavailable, the default not-found response is returned.
+Chat requests check the internal DB first, then retrieved vector knowledge, then Ollama. Private-mode requests skip message persistence, embedding persistence, and future knowledge storage.
 
 ## Run Frontend
 
@@ -88,7 +54,9 @@ POST /api/chat/ask
 Content-Type: application/json
 
 {
-  "message": "How to create RITM?"
+  "message": "How to create RITM?",
+  "sessionId": "",
+  "privateMode": false
 }
 ```
 
@@ -96,26 +64,11 @@ Response:
 
 ```json
 {
-  "reply": "Steps to create RITM: 1. Open the service portal..."
+  "sessionId": "generated-session-id",
+  "reply": "Steps to create RITM: 1. Open the service portal...",
+  "privateMode": false,
+  "sources": []
 }
 ```
 
-Direct Ollama endpoint:
-
-```http
-POST /api/llm/generate
-Content-Type: application/json
-
-{
-  "message": "Explain password reset steps"
-}
-```
-
-This endpoint returns `503 Service Unavailable` when `ollama.enabled=false` or Ollama cannot be reached.
-
-## Phase 2 Improvements
-
-1. AI NLP search with embeddings or semantic similarity.
-2. Authentication with Spring Security and JWT.
-3. Chat history stored by user and timestamp.
-4. Admin panel to create, update, and delete Q&A records.
+Additional APIs include `/api/sessions`, `/api/knowledge/documents`, `/api/knowledge/urls`, `/api/incidents/analyze`, and `/api/chat/ask/stream`.
