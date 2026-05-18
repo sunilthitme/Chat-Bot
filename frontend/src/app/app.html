@@ -1,4 +1,4 @@
-<main class="app-shell">
+<main class="app-shell" [class.dark]="darkMode()">
   <aside class="sidebar" aria-label="Chat sessions">
     <button class="new-chat" type="button" (click)="newChat()" [disabled]="isSidebarLoading()">
       + New chat
@@ -34,6 +34,9 @@
         >
           {{ privateMode() ? 'Private on' : 'Private off' }}
         </button>
+        <button class="theme-toggle" type="button" (click)="toggleTheme()">
+          {{ darkMode() ? 'Light' : 'Dark' }}
+        </button>
         <span class="status">Online</span>
       </div>
     </header>
@@ -41,8 +44,11 @@
     <div class="tool-strip">
       <label class="upload-button">
         Upload
-        <input type="file" accept=".pdf,.docx,.txt,.log" (change)="uploadDocument($event)" hidden>
+        <input type="file" accept=".pdf,.docx,.txt,.log,.csv" (change)="uploadDocument($event)" hidden>
       </label>
+      <div *ngIf="uploadProgress() > 0" class="upload-progress">
+        <span [style.width.%]="uploadProgress()"></span>
+      </div>
 
       <form class="url-form" (ngSubmit)="ingestUrl()">
         <input
@@ -64,11 +70,14 @@
         [class.bot-row]="message.sender === 'bot'"
       >
         <div class="message-bubble">
-          {{ message.text }}
+          <div class="message-content" [innerHTML]="renderMarkdown(message.text)"></div>
           <div *ngIf="message.sources?.length" class="sources">
             <strong>Sources</strong>
             <span *ngFor="let source of message.sources">
-              {{ source.sourceName }} - {{ source.sourceType }} - {{ source.score | number:'1.2-2' }}
+              {{ source.sourceName }}
+              <ng-container *ngIf="source.pageNumber"> page {{ source.pageNumber }}</ng-container>
+              <ng-container *ngIf="source.sectionTitle"> - {{ source.sectionTitle }}</ng-container>
+              - {{ source.score | number:'1.2-2' }}
             </span>
           </div>
         </div>
@@ -81,23 +90,12 @@
       </div>
     </div>
 
-    <form class="incident-form" (ngSubmit)="analyzeIncident()">
-      <textarea
-        name="incident"
-        [(ngModel)]="incidentInput"
-        placeholder="Paste ServiceNow incident details"
-        rows="2"
-        [disabled]="isLoading()"
-      ></textarea>
-      <button type="submit" [disabled]="isLoading() || !incidentInput.trim()">Analyze</button>
-    </form>
-
     <form class="chat-form" (ngSubmit)="sendMessage()">
       <input
         type="text"
         name="message"
         [(ngModel)]="userInput"
-        placeholder="Ask about internal knowledge, uploaded docs, URLs, or incidents"
+        placeholder="Ask about internal knowledge, uploaded docs, or trusted URLs"
         autocomplete="off"
         [disabled]="isLoading()"
       >

@@ -1,6 +1,6 @@
 # Internal Chatbot Backend
 
-Spring Boot REST API for a DB-first enterprise chatbot with session memory, private mode, document and URL ingestion, Ollama generation, LangChain4j embeddings, ChromaDB vector sync, and local persisted vector metadata.
+Spring Boot REST API for a DB-first enterprise chatbot with session memory, private mode, page-aware document ingestion, recursive URL crawling, Ollama generation, LangChain4j embeddings, ChromaDB vector sync, and local persisted vector metadata.
 
 ## Run
 
@@ -20,7 +20,7 @@ ollama pull nomic-embed-text
 Chat requests always check the internal database first.
 
 - If the database has a matching answer, the prompt tells Ollama to prefer it.
-- If the database has no answer, RAG context from stored documents, URLs, and useful prior knowledge is provided.
+- If the database has no answer, RAG context from stored documents and crawled URLs is provided.
 - If Ollama is unavailable, the service falls back to the DB answer or the default not-found message.
 - If private mode is enabled, messages and embeddings are not persisted.
 
@@ -50,6 +50,8 @@ Document upload and URL ingestion:
 POST http://localhost:8080/api/knowledge/documents
 POST http://localhost:8080/api/knowledge/urls
 ```
+
+Supported upload types: PDF, DOCX, TXT, LOG, CSV, plus Apache Tika fallback for other readable office/text formats.
 
 ## Direct LLM API
 
@@ -83,4 +85,4 @@ spring.datasource.password=your_password
 spring.jpa.hibernate.ddl-auto=update
 ```
 
-Reference SQL for the enterprise tables is in `src/main/resources/schema-enterprise.sql`.
+Reference SQL for the enterprise tables is in `src/main/resources/schema-enterprise.sql`. The production RAG refactor notes are in `../docs/production-rag-refactor.md`.

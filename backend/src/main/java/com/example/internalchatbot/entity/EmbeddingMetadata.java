@@ -33,6 +33,21 @@ public class EmbeddingMetadata {
     @Column(nullable = false, length = 40)
     private String sourceType;
 
+    @Column(length = 600)
+    private String sourceUrl;
+
+    private Integer pageNumber;
+
+    @Column(length = 260)
+    private String sectionTitle;
+
+    private Integer chunkIndex;
+
+    private Integer tokenEstimate;
+
+    @Column(length = 64)
+    private String contentHash;
+
     @Lob
     @Column(nullable = false)
     private String contentChunk;
@@ -40,6 +55,9 @@ public class EmbeddingMetadata {
     @Lob
     @Column(nullable = false)
     private String vectorJson;
+
+    @Lob
+    private String metadataJson;
 
     @Column(nullable = false)
     private boolean privateMode;
@@ -98,6 +116,54 @@ public class EmbeddingMetadata {
         this.sourceType = sourceType;
     }
 
+    public String getSourceUrl() {
+        return sourceUrl;
+    }
+
+    public void setSourceUrl(String sourceUrl) {
+        this.sourceUrl = sourceUrl;
+    }
+
+    public Integer getPageNumber() {
+        return pageNumber;
+    }
+
+    public void setPageNumber(Integer pageNumber) {
+        this.pageNumber = pageNumber;
+    }
+
+    public String getSectionTitle() {
+        return sectionTitle;
+    }
+
+    public void setSectionTitle(String sectionTitle) {
+        this.sectionTitle = sectionTitle;
+    }
+
+    public Integer getChunkIndex() {
+        return chunkIndex;
+    }
+
+    public void setChunkIndex(Integer chunkIndex) {
+        this.chunkIndex = chunkIndex;
+    }
+
+    public Integer getTokenEstimate() {
+        return tokenEstimate;
+    }
+
+    public void setTokenEstimate(Integer tokenEstimate) {
+        this.tokenEstimate = tokenEstimate;
+    }
+
+    public String getContentHash() {
+        return contentHash;
+    }
+
+    public void setContentHash(String contentHash) {
+        this.contentHash = contentHash;
+    }
+
     public String getContentChunk() {
         return contentChunk;
     }
@@ -112,6 +178,14 @@ public class EmbeddingMetadata {
 
     public void setVectorJson(String vectorJson) {
         this.vectorJson = vectorJson;
+    }
+
+    public String getMetadataJson() {
+        return metadataJson;
+    }
+
+    public void setMetadataJson(String metadataJson) {
+        this.metadataJson = metadataJson;
     }
 
     public boolean isPrivateMode() {

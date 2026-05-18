@@ -28,8 +28,9 @@ public class ChatService {
     private final SessionService sessionService;
     private final EmbeddingService embeddingService;
     private final VectorStoreService vectorStoreService;
-    private final KnowledgeIngestionService knowledgeIngestionService;
     private final int ragTopK;
+    private final double minScore;
+    private final int maxContextChars;
 
     public ChatService(
             ChatQuestionRepository chatQuestionRepository,
@@ -37,16 +38,18 @@ public class ChatService {
             SessionService sessionService,
             EmbeddingService embeddingService,
             VectorStoreService vectorStoreService,
-            KnowledgeIngestionService knowledgeIngestionService,
-            @Value("${rag.top-k:5}") int ragTopK
+            @Value("${rag.top-k:6}") int ragTopK,
+            @Value("${rag.min-score:0.20}") double minScore,
+            @Value("${rag.max-context-chars:9000}") int maxContextChars
     ) {
         this.chatQuestionRepository = chatQuestionRepository;
         this.llmService = llmService;
         this.sessionService = sessionService;
         this.embeddingService = embeddingService;
         this.vectorStoreService = vectorStoreService;
-        this.knowledgeIngestionService = knowledgeIngestionService;
         this.ragTopK = ragTopK;
+        this.minScore = minScore;
+        this.maxContextChars = maxContextChars;
     }
 
     public String ask(String message) {
@@ -67,13 +70,14 @@ public class ChatService {
 
         sessionService.saveMessage(session.getId(), "user", message, privateMode);
 
-        String storedAnswer = findStoredAnswer(normalize(message));
-        List<VectorSearchResult> retrievedKnowledge = retrieveKnowledge(message, privateMode);
-        String prompt = buildPrompt(message, session.getId(), storedAnswer, retrievedKnowledge, privateMode);
+        String memory = privateMode ? "" : sessionService.memoryForSession(session.getId(), 5_000);
+        String rewrittenQuestion = rewriteQuestion(message, memory);
+        String storedAnswer = findStoredAnswer(normalize(rewrittenQuestion));
+        List<VectorSearchResult> retrievedKnowledge = retrieveKnowledge(rewrittenQuestion, privateMode);
+        String prompt = buildPrompt(message, rewrittenQuestion, memory, storedAnswer, retrievedKnowledge, privateMode);
 
         String reply = generateReply(prompt, storedAnswer);
         sessionService.saveMessage(session.getId(), "assistant", reply, privateMode);
-        knowledgeIngestionService.storeUsefulKnowledge(session.getId(), "chat-session-" + session.getId(), reply, privateMode);
 
         return new ChatResponse(
                 session.getId(),
@@ -83,7 +87,7 @@ public class ChatService {
         );
     }
 
-    public void stream(ChatRequest request, Consumer<String> onToken) {
+    public ChatResponse stream(ChatRequest request, Consumer<String> onToken) {
         String message = request.getMessage();
         ChatSession session = sessionService.getOrCreateSession(
                 request.getSessionId(),
@@ -95,15 +99,17 @@ public class ChatService {
 
         sessionService.saveMessage(session.getId(), "user", message, privateMode);
 
-        String storedAnswer = findStoredAnswer(normalize(message));
-        List<VectorSearchResult> retrievedKnowledge = retrieveKnowledge(message, privateMode);
-        String prompt = buildPrompt(message, session.getId(), storedAnswer, retrievedKnowledge, privateMode);
+        String memory = privateMode ? "" : sessionService.memoryForSession(session.getId(), 5_000);
+        String rewrittenQuestion = rewriteQuestion(message, memory);
+        String storedAnswer = findStoredAnswer(normalize(rewrittenQuestion));
+        List<VectorSearchResult> retrievedKnowledge = retrieveKnowledge(rewrittenQuestion, privateMode);
+        String prompt = buildPrompt(message, rewrittenQuestion, memory, storedAnswer, retrievedKnowledge, privateMode);
 
         if (!llmService.isEnabled()) {
             String fallback = storedAnswer == null ? NOT_FOUND_REPLY : storedAnswer;
             onToken.accept(fallback);
             sessionService.saveMessage(session.getId(), "assistant", fallback, privateMode);
-            return;
+            return new ChatResponse(session.getId(), fallback, privateMode, toSourceReferences(retrievedKnowledge));
         }
 
         StringBuilder streamedReply = new StringBuilder();
@@ -123,7 +129,7 @@ public class ChatService {
             onToken.accept(reply);
         }
         sessionService.saveMessage(session.getId(), "assistant", reply, privateMode);
-        knowledgeIngestionService.storeUsefulKnowledge(session.getId(), "chat-session-" + session.getId(), reply, privateMode);
+        return new ChatResponse(session.getId(), reply, privateMode, toSourceReferences(retrievedKnowledge));
     }
 
     private String findStoredAnswer(String normalizedMessage) {
@@ -157,50 +163,86 @@ public class ChatService {
 
         try {
             List<Double> queryVector = embeddingService.embed(message);
-            return vectorStoreService.search(queryVector, ragTopK);
+            return vectorStoreService.search(message, queryVector, ragTopK * 2)
+                    .stream()
+                    .filter(result -> result.score() >= minScore)
+                    .limit(ragTopK)
+                    .toList();
         } catch (RuntimeException ex) {
             log.warn("RAG retrieval skipped because embedding generation failed.", ex);
             return List.of();
         }
     }
 
+    private String rewriteQuestion(String message, String memory) {
+        if (!llmService.isEnabled() || memory == null || memory.isBlank()) {
+            return message;
+        }
+
+        String prompt = """
+                Rewrite the user's latest question into a standalone search query.
+                Keep entity names, document names, numbers, and technical terms.
+                Do not answer the question.
+
+                Conversation:
+                %s
+
+                Latest question:
+                %s
+
+                Standalone search query:
+                """.formatted(memory, message);
+        try {
+            String rewritten = llmService.generateResponse(prompt, 0.0).trim();
+            return rewritten.isBlank() ? message : rewritten;
+        } catch (RuntimeException ex) {
+            log.debug("Query rewrite failed. Using original user message.");
+            return message;
+        }
+    }
+
     private String buildPrompt(
             String message,
-            String sessionId,
+            String rewrittenQuestion,
+            String memory,
             String storedAnswer,
             List<VectorSearchResult> retrievedKnowledge,
             boolean privateMode
     ) {
-        String memory = privateMode ? "" : sessionService.memoryForSession(sessionId);
-        String knowledge = retrievedKnowledge.stream()
-                .map(result -> "- [" + result.sourceName() + "] " + result.content())
-                .reduce("", (left, right) -> left + right + "\n");
+        String knowledge = formatKnowledge(retrievedKnowledge);
 
         return """
-                You are an enterprise internal AI assistant.
+                You are a production-grade enterprise AI assistant with a conversational style similar to ChatGPT.
                 Follow these rules:
-                1. Prefer the internal DB answer when present.
-                2. Use retrieved knowledge only when relevant.
-                3. Use current session memory only; never assume memory from another chat.
-                4. If private mode is enabled, do not mention storing or learning from the conversation.
-                5. Be concise, accurate, and operationally useful.
+                1. Use current session memory to understand follow-up questions.
+                2. Prefer the internal DB answer when present.
+                3. Use retrieved document and website knowledge only when relevant.
+                4. Answer naturally; do not copy chunks verbatim unless quoting a short exact phrase is useful.
+                5. If the context is insufficient, say what is missing and give the safest next step.
+                6. When using retrieved sources, cite them inline using the source name and page when available.
+                7. Never leak memory across sessions.
+                8. If private mode is enabled, do not mention storing or learning from this conversation.
 
                 Private mode: %s
 
                 Current session memory:
                 %s
 
+                Rewritten standalone question for retrieval:
+                %s
+
                 Internal DB answer:
                 %s
 
-                Retrieved enterprise knowledge:
+                Retrieved ranked context:
                 %s
 
-                User question:
+                User's latest message:
                 %s
                 """.formatted(
                 privateMode ? "enabled" : "disabled",
                 memory.isBlank() ? "No previous messages in this session." : memory,
+                rewrittenQuestion,
                 storedAnswer == null ? "No matching DB answer." : storedAnswer,
                 knowledge.isBlank() ? "No relevant vector knowledge found." : knowledge,
                 message
@@ -217,7 +259,7 @@ public class ChatService {
             if (!llmReply.isBlank()) {
                 return llmReply;
             }
-        } catch (RestClientException ex) {
+        } catch (RuntimeException ex) {
             log.warn("Ollama request failed. Falling back to stored answer when available.", ex);
         }
 
@@ -229,10 +271,45 @@ public class ChatService {
                 .map(result -> new SourceReference(
                         result.sourceName(),
                         result.sourceType(),
+                        result.sourceUrl(),
+                        result.pageNumber(),
+                        result.sectionTitle(),
                         result.score(),
                         result.content().length() > 180 ? result.content().substring(0, 180) + "..." : result.content()
                 ))
                 .toList();
+    }
+
+    private String formatKnowledge(List<VectorSearchResult> retrievedKnowledge) {
+        StringBuilder builder = new StringBuilder();
+        int sourceNumber = 1;
+        for (VectorSearchResult result : retrievedKnowledge) {
+            if (builder.length() >= maxContextChars) {
+                break;
+            }
+            builder.append("Source ").append(sourceNumber++).append('\n');
+            builder.append("Name: ").append(result.sourceName()).append('\n');
+            builder.append("Type: ").append(result.sourceType()).append('\n');
+            if (result.sourceUrl() != null && !result.sourceUrl().isBlank()) {
+                builder.append("URL: ").append(result.sourceUrl()).append('\n');
+            }
+            if (result.pageNumber() != null) {
+                builder.append("Page: ").append(result.pageNumber()).append('\n');
+            }
+            if (result.sectionTitle() != null && !result.sectionTitle().isBlank()) {
+                builder.append("Section: ").append(result.sectionTitle()).append('\n');
+            }
+            builder.append("Relevance: ").append(String.format("%.3f", result.score())).append('\n');
+            builder.append("Content: ").append(trim(result.content(), 1_600)).append("\n\n");
+        }
+        return trim(builder.toString(), maxContextChars);
+    }
+
+    private String trim(String text, int maxChars) {
+        if (text == null || text.length() <= maxChars) {
+            return text == null ? "" : text;
+        }
+        return text.substring(0, maxChars) + "...";
     }
 
     private String normalize(String text) {

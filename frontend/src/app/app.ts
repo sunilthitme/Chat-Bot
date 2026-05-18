@@ -1,4 +1,5 @@
 import { CommonModule } from '@angular/common';
+import { HttpEventType } from '@angular/common/http';
 import { AfterViewChecked, Component, ElementRef, OnInit, ViewChild, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { finalize } from 'rxjs';
@@ -10,6 +11,7 @@ interface ChatMessage {
   sender: Sender;
   text: string;
   sources?: SourceReference[];
+  streaming?: boolean;
 }
 
 // Root component renders the chatbot window and handles user input.
@@ -22,17 +24,18 @@ interface ChatMessage {
 export class AppComponent implements AfterViewChecked, OnInit {
   userInput = '';
   urlInput = '';
-  incidentInput = '';
   readonly isLoading = signal(false);
   readonly isSidebarLoading = signal(false);
+  readonly uploadProgress = signal(0);
   readonly privateMode = signal(false);
+  readonly darkMode = signal(false);
   readonly sessions = signal<ChatSession[]>([]);
   readonly currentSessionId = signal('');
 
   readonly messages = signal<ChatMessage[]>([
     {
       sender: 'bot',
-      text: 'Hi, ask me about application features or processes.'
+      text: 'Hi, ask me about your internal knowledge, uploaded documents, or trusted websites.'
     }
   ]);
 
@@ -68,10 +71,11 @@ export class AppComponent implements AfterViewChecked, OnInit {
     }
 
     this.appendMessage({ sender: 'user', text: message });
+    const botIndex = this.appendMessage({ sender: 'bot', text: '', streaming: true });
     this.userInput = '';
     this.isLoading.set(true);
 
-    this.chatService.ask({
+    this.chatService.streamAsk({
       message,
       sessionId: this.currentSessionId(),
       userKey: 'local-user',
@@ -79,17 +83,31 @@ export class AppComponent implements AfterViewChecked, OnInit {
     })
       .pipe(finalize(() => this.isLoading.set(false)))
       .subscribe({
-        next: (response) => {
-          this.currentSessionId.set(response.sessionId);
-          this.privateMode.set(response.privateMode);
-          this.appendMessage({ sender: 'bot', text: response.reply, sources: response.sources });
-          this.loadSessions();
+        next: (event) => {
+          if (event.type === 'token') {
+            this.updateMessage(botIndex, (messageToUpdate) => ({
+              ...messageToUpdate,
+              text: messageToUpdate.text + event.token
+            }));
+          }
+          if (event.type === 'done') {
+            this.currentSessionId.set(event.response.sessionId);
+            this.privateMode.set(event.response.privateMode);
+            this.updateMessage(botIndex, () => ({
+              sender: 'bot',
+              text: event.response.reply,
+              sources: event.response.sources,
+              streaming: false
+            }));
+            this.loadSessions();
+          }
         },
         error: () => {
-          this.appendMessage({
+          this.updateMessage(botIndex, () => ({
             sender: 'bot',
-            text: 'Backend is not reachable. Please make sure Spring Boot is running.'
-          });
+            text: 'Backend is not reachable. Please make sure Spring Boot is running.',
+            streaming: false
+          }));
         }
       });
   }
@@ -104,7 +122,7 @@ export class AppComponent implements AfterViewChecked, OnInit {
           this.privateMode.set(session.privateMode);
           this.messages.set([{
             sender: 'bot',
-            text: 'New chat started. Ask me about internal knowledge, documents, URLs, or incidents.'
+            text: 'New chat started. Ask me about internal knowledge, uploaded files, or trusted websites.'
           }]);
           this.loadSessions();
         }
@@ -152,17 +170,27 @@ export class AppComponent implements AfterViewChecked, OnInit {
     }
 
     this.isLoading.set(true);
+    this.uploadProgress.set(0);
     this.ensureSessionThen((sessionId) => {
       this.chatService.uploadDocument(file, sessionId, this.privateMode())
-        .pipe(finalize(() => this.isLoading.set(false)))
+        .pipe(finalize(() => {
+          this.isLoading.set(false);
+          this.uploadProgress.set(0);
+        }))
         .subscribe({
-          next: (response) => {
-            this.currentSessionId.set(response.sessionId);
-            this.appendMessage({
-              sender: 'bot',
-              text: `${response.message} Chunks stored: ${response.chunksStored}.`
-            });
-            this.loadSessions();
+          next: (event) => {
+            if (event.type === HttpEventType.UploadProgress && event.total) {
+              this.uploadProgress.set(Math.round((100 * event.loaded) / event.total));
+            }
+            if (event.type === HttpEventType.Response && event.body) {
+              const response = event.body;
+              this.currentSessionId.set(response.sessionId);
+              this.appendMessage({
+                sender: 'bot',
+                text: `${response.message} Chunks stored: ${response.chunksStored}.`
+              });
+              this.loadSessions();
+            }
           },
           error: () => this.appendMessage({ sender: 'bot', text: 'Document upload failed.' })
         });
@@ -194,27 +222,8 @@ export class AppComponent implements AfterViewChecked, OnInit {
     });
   }
 
-  analyzeIncident(): void {
-    const incidentDetails = this.incidentInput.trim();
-    if (!incidentDetails || this.isLoading()) {
-      return;
-    }
-
-    this.incidentInput = '';
-    this.isLoading.set(true);
-    this.ensureSessionThen((sessionId) => {
-      this.chatService.analyzeIncident(incidentDetails, sessionId, this.privateMode())
-        .pipe(finalize(() => this.isLoading.set(false)))
-        .subscribe({
-          next: (response) => {
-            this.currentSessionId.set(response.sessionId);
-            this.appendMessage({ sender: 'user', text: `Incident details:\n${incidentDetails}` });
-            this.appendMessage({ sender: 'bot', text: response.analysis });
-            this.loadSessions();
-          },
-          error: () => this.appendMessage({ sender: 'bot', text: 'Incident analysis failed.' })
-        });
-    });
+  toggleTheme(): void {
+    this.darkMode.update((value) => !value);
   }
 
   private loadSessions(): void {
@@ -251,8 +260,38 @@ export class AppComponent implements AfterViewChecked, OnInit {
     });
   }
 
-  private appendMessage(message: ChatMessage): void {
+  renderMarkdown(text: string): string {
+    const escaped = this.escapeHtml(text || '');
+    return escaped
+      .replace(/```([\s\S]*?)```/g, '<pre><code>$1</code></pre>')
+      .replace(/`([^`]+)`/g, '<code>$1</code>')
+      .replace(/^### (.*)$/gm, '<h3>$1</h3>')
+      .replace(/^## (.*)$/gm, '<h2>$1</h2>')
+      .replace(/^# (.*)$/gm, '<h1>$1</h1>')
+      .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+      .replace(/\n/g, '<br>');
+  }
+
+  private appendMessage(message: ChatMessage): number {
+    const index = this.messages().length;
     this.messages.update((messages) => [...messages, message]);
     this.shouldScrollMessages = true;
+    return index;
+  }
+
+  private updateMessage(index: number, updater: (message: ChatMessage) => ChatMessage): void {
+    this.messages.update((messages) => messages.map((message, messageIndex) => (
+      messageIndex === index ? updater(message) : message
+    )));
+    this.shouldScrollMessages = true;
+  }
+
+  private escapeHtml(text: string): string {
+    return text
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#039;');
   }
 }

@@ -1,13 +1,17 @@
 package com.example.internalchatbot.service;
 
-public record VectorSearchResult(
-        Long embeddingId,
+import java.util.Map;
+
+public record DocumentChunk(
+        String text,
         String sourceName,
         String sourceType,
         String sourceUrl,
         Integer pageNumber,
         String sectionTitle,
-        String content,
-        double score
+        int chunkIndex,
+        int tokenEstimate,
+        String contentHash,
+        Map<String, String> metadata
 ) {
 }

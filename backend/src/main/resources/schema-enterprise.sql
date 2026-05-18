@@ -30,8 +30,15 @@ create table uploaded_documents (
     source_name varchar(260) not null,
     source_type varchar(40) not null,
     source_url varchar(600),
+    media_type varchar(120),
+    parser_name varchar(120),
+    content_hash varchar(64),
+    page_count integer,
+    chunk_count integer,
+    ingestion_status varchar(40),
     private_mode boolean not null,
     extracted_text clob not null,
+    metadata_json clob,
     created_at timestamp not null
 );
 
@@ -42,8 +49,15 @@ create table embeddings_metadata (
     document_id bigint,
     source_name varchar(260) not null,
     source_type varchar(40) not null,
+    source_url varchar(600),
+    page_number integer,
+    section_title varchar(260),
+    chunk_index integer,
+    token_estimate integer,
+    content_hash varchar(64),
     content_chunk clob not null,
     vector_json clob not null,
+    metadata_json clob,
     private_mode boolean not null,
     created_at timestamp not null
 );
@@ -52,3 +66,5 @@ create index idx_chat_sessions_user_updated on chat_sessions(user_key, updated_a
 create index idx_chat_messages_session_created on chat_messages(session_id, created_at);
 create index idx_embeddings_private_created on embeddings_metadata(private_mode, created_at);
 create index idx_embeddings_session_private on embeddings_metadata(session_id, private_mode);
+create index idx_embeddings_document on embeddings_metadata(document_id);
+create index idx_embeddings_hash on embeddings_metadata(content_hash);

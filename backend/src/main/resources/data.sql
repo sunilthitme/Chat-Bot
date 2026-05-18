@@ -13,11 +13,3 @@ SELECT
  'password reset, forgot password, login issue, reset password',
  CURRENT_TIMESTAMP
 WHERE NOT EXISTS (SELECT 1 FROM chat_questions WHERE question = 'How to reset password?');
-
-INSERT INTO chat_questions (question, answer, keywords, created_at)
-SELECT
- 'How to raise incident?',
- 'Steps to raise an incident: 1. Open the support portal. 2. Select Raise Incident. 3. Enter the issue summary and description. 4. Choose priority and category. 5. Submit the incident ticket.',
- 'incident, raise incident, issue ticket, support ticket',
- CURRENT_TIMESTAMP
-WHERE NOT EXISTS (SELECT 1 FROM chat_questions WHERE question = 'How to raise incident?');

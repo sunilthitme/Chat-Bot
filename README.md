@@ -1,8 +1,8 @@
 # Internal Chatbot
 
-Angular + Spring Boot internal chatbot with DB-first answers, Ollama, multi-session memory, private mode, document and URL ingestion, ServiceNow incident analysis, and RAG over persisted enterprise knowledge.
+Angular + Spring Boot internal chatbot with DB-first answers, Ollama, multi-session memory, private mode, production RAG, document ingestion, URL crawling, and persisted enterprise knowledge.
 
-See [docs/enterprise-ai-architecture.md](docs/enterprise-ai-architecture.md) for the module-by-module architecture, API flow, schema, and production recommendations. See [docs/chroma-v2-rag.md](docs/chroma-v2-rag.md) for the ChromaDB API V2 and LangChain4j setup.
+See [docs/enterprise-ai-architecture.md](docs/enterprise-ai-architecture.md) for the module-by-module architecture, API flow, schema, and production recommendations. See [docs/production-rag-refactor.md](docs/production-rag-refactor.md) for the latest refactor notes. See [docs/chroma-v2-rag.md](docs/chroma-v2-rag.md) for the ChromaDB API V2 and LangChain4j setup.
 
 ## Run Backend
 
@@ -73,4 +73,4 @@ Response:
 }
 ```
 
-Additional APIs include `/api/sessions`, `/api/knowledge/documents`, `/api/knowledge/urls`, `/api/incidents/analyze`, and `/api/chat/ask/stream`.
+Additional APIs include `/api/sessions`, `/api/knowledge/documents`, `/api/knowledge/urls`, and `/api/chat/ask/stream`.

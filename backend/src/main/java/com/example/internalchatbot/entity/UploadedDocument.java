@@ -31,12 +31,31 @@ public class UploadedDocument {
     @Column(length = 600)
     private String sourceUrl;
 
+    @Column(length = 120)
+    private String mediaType;
+
+    @Column(length = 120)
+    private String parserName;
+
+    @Column(length = 64)
+    private String contentHash;
+
+    private Integer pageCount;
+
+    private Integer chunkCount;
+
+    @Column(length = 40)
+    private String ingestionStatus;
+
     @Column(nullable = false)
     private boolean privateMode;
 
     @Lob
     @Column(nullable = false)
     private String extractedText;
+
+    @Lob
+    private String metadataJson;
 
     @Column(nullable = false)
     private Instant createdAt;
@@ -45,6 +64,9 @@ public class UploadedDocument {
     void prePersist() {
         if (createdAt == null) {
             createdAt = Instant.now();
+        }
+        if (ingestionStatus == null || ingestionStatus.isBlank()) {
+            ingestionStatus = "COMPLETED";
         }
     }
 
@@ -92,12 +114,68 @@ public class UploadedDocument {
         this.privateMode = privateMode;
     }
 
+    public String getMediaType() {
+        return mediaType;
+    }
+
+    public void setMediaType(String mediaType) {
+        this.mediaType = mediaType;
+    }
+
+    public String getParserName() {
+        return parserName;
+    }
+
+    public void setParserName(String parserName) {
+        this.parserName = parserName;
+    }
+
+    public String getContentHash() {
+        return contentHash;
+    }
+
+    public void setContentHash(String contentHash) {
+        this.contentHash = contentHash;
+    }
+
+    public Integer getPageCount() {
+        return pageCount;
+    }
+
+    public void setPageCount(Integer pageCount) {
+        this.pageCount = pageCount;
+    }
+
+    public Integer getChunkCount() {
+        return chunkCount;
+    }
+
+    public void setChunkCount(Integer chunkCount) {
+        this.chunkCount = chunkCount;
+    }
+
+    public String getIngestionStatus() {
+        return ingestionStatus;
+    }
+
+    public void setIngestionStatus(String ingestionStatus) {
+        this.ingestionStatus = ingestionStatus;
+    }
+
     public String getExtractedText() {
         return extractedText;
     }
 
     public void setExtractedText(String extractedText) {
         this.extractedText = extractedText;
+    }
+
+    public String getMetadataJson() {
+        return metadataJson;
+    }
+
+    public void setMetadataJson(String metadataJson) {
+        this.metadataJson = metadataJson;
     }
 
     public Instant getCreatedAt() {

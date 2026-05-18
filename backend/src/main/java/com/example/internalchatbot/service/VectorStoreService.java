@@ -15,6 +15,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -48,6 +49,29 @@ public class VectorStoreService {
             List<Double> vector,
             boolean privateMode
     ) {
+        DocumentChunk chunk = new DocumentChunk(
+                content,
+                sourceName,
+                sourceType,
+                null,
+                null,
+                null,
+                0,
+                Math.max(1, content == null ? 0 : (int) Math.ceil(content.length() / 4.0)),
+                ContentHash.sha256(content),
+                Map.of()
+        );
+        return store(namespace, sessionId, documentId, chunk, vector, privateMode);
+    }
+
+    public EmbeddingMetadata store(
+            String namespace,
+            String sessionId,
+            Long documentId,
+            DocumentChunk chunk,
+            List<Double> vector,
+            boolean privateMode
+    ) {
         if (privateMode) {
             throw new IllegalArgumentException("Private-mode content must not be stored in the vector database");
         }
@@ -56,10 +80,17 @@ public class VectorStoreService {
         metadata.setNamespace(namespace);
         metadata.setSessionId(sessionId);
         metadata.setDocumentId(documentId);
-        metadata.setSourceName(sourceName);
-        metadata.setSourceType(sourceType);
-        metadata.setContentChunk(content);
+        metadata.setSourceName(chunk.sourceName());
+        metadata.setSourceType(chunk.sourceType());
+        metadata.setSourceUrl(chunk.sourceUrl());
+        metadata.setPageNumber(chunk.pageNumber());
+        metadata.setSectionTitle(chunk.sectionTitle());
+        metadata.setChunkIndex(chunk.chunkIndex());
+        metadata.setTokenEstimate(chunk.tokenEstimate());
+        metadata.setContentHash(chunk.contentHash());
+        metadata.setContentChunk(chunk.text());
         metadata.setVectorJson(toJson(vector));
+        metadata.setMetadataJson(toJson(chunk.metadata()));
         metadata.setPrivateMode(false);
 
         EmbeddingMetadata saved = embeddingMetadataRepository.save(metadata);
@@ -68,6 +99,10 @@ public class VectorStoreService {
     }
 
     public List<VectorSearchResult> search(List<Double> queryVector, int topK) {
+        return search("", queryVector, topK);
+    }
+
+    public List<VectorSearchResult> search(String queryText, List<Double> queryVector, int topK) {
         if (queryVector.isEmpty()) {
             return List.of();
         }
@@ -78,22 +113,43 @@ public class VectorStoreService {
         }
 
         return embeddingMetadataRepository
-                .findTop300ByPrivateModeFalseOrderByCreatedAtDesc()
+                .findTop500ByPrivateModeFalseOrderByCreatedAtDesc()
                 .stream()
-                .map(metadata -> toSearchResult(metadata, queryVector))
+                .map(metadata -> toSearchResult(metadata, queryVector, queryText))
                 .sorted(Comparator.comparingDouble(VectorSearchResult::score).reversed())
                 .limit(topK)
                 .toList();
     }
 
-    private VectorSearchResult toSearchResult(EmbeddingMetadata metadata, List<Double> queryVector) {
+    public void deleteByDocumentId(Long documentId) {
+        List<EmbeddingMetadata> embeddings = embeddingMetadataRepository.findByDocumentIdAndPrivateModeFalse(documentId);
+        List<String> chromaIds = embeddings.stream()
+                .map(metadata -> "embedding-" + metadata.getId())
+                .toList();
+        chromaEmbeddingStoreProvider.getStore().ifPresent(embeddingStore -> {
+            try {
+                embeddingStore.removeAll(chromaIds);
+            } catch (RuntimeException ex) {
+                chromaEmbeddingStoreProvider.markUnavailable(ex);
+                log.warn("ChromaDB delete failed for documentId={}. Local metadata will still be deleted.", documentId, ex);
+            }
+        });
+        embeddingMetadataRepository.deleteAll(embeddings);
+    }
+
+    private VectorSearchResult toSearchResult(EmbeddingMetadata metadata, List<Double> queryVector, String queryText) {
         List<Double> storedVector = fromJson(metadata.getVectorJson());
+        double vectorScore = cosineSimilarity(queryVector, storedVector);
+        double hybridScore = vectorScore + keywordBoost(queryText, metadata.getContentChunk());
         return new VectorSearchResult(
                 metadata.getId(),
                 metadata.getSourceName(),
                 metadata.getSourceType(),
+                metadata.getSourceUrl(),
+                metadata.getPageNumber(),
+                metadata.getSectionTitle(),
                 metadata.getContentChunk(),
-                cosineSimilarity(queryVector, storedVector)
+                hybridScore
         );
     }
 
@@ -144,19 +200,27 @@ public class VectorStoreService {
                 readEmbeddingId(match.embeddingId(), metadata),
                 defaultIfBlank(metadata.getString("sourceName"), "chroma"),
                 defaultIfBlank(metadata.getString("sourceType"), "knowledge"),
+                metadata.getString("sourceUrl"),
+                metadata.getInteger("pageNumber"),
+                metadata.getString("sectionTitle"),
                 textSegment.text(),
                 match.score() == null ? 0 : match.score()
         );
     }
 
     private TextSegment toTextSegment(EmbeddingMetadata metadata) {
+        Map<String, Object> values = new LinkedHashMap<>();
+        values.put("sourceName", metadata.getSourceName());
+        values.put("sourceType", metadata.getSourceType());
+        values.put("embeddingId", metadata.getId());
+        putIfPresent(values, "sourceUrl", metadata.getSourceUrl());
+        putIfPresent(values, "pageNumber", metadata.getPageNumber());
+        putIfPresent(values, "sectionTitle", metadata.getSectionTitle());
+        putIfPresent(values, "chunkIndex", metadata.getChunkIndex());
+        putIfPresent(values, "contentHash", metadata.getContentHash());
         return TextSegment.from(
                 metadata.getContentChunk(),
-                Metadata.from(Map.of(
-                        "sourceName", metadata.getSourceName(),
-                        "sourceType", metadata.getSourceType(),
-                        "embeddingId", metadata.getId()
-                ))
+                Metadata.from(values)
         );
     }
 
@@ -185,11 +249,39 @@ public class VectorStoreService {
         return value == null || value.isBlank() ? fallback : value;
     }
 
+    private void putIfPresent(Map<String, Object> values, String key, Object value) {
+        if (value != null && !(value instanceof String string && string.isBlank())) {
+            values.put(key, value);
+        }
+    }
+
+    private double keywordBoost(String queryText, String content) {
+        if (queryText == null || queryText.isBlank() || content == null || content.isBlank()) {
+            return 0;
+        }
+        String normalizedContent = content.toLowerCase();
+        long matches = java.util.Arrays.stream(queryText.toLowerCase().split("\\s+"))
+                .map(word -> word.replaceAll("[^a-z0-9]", ""))
+                .filter(word -> word.length() > 3)
+                .distinct()
+                .filter(normalizedContent::contains)
+                .count();
+        return Math.min(0.25, matches * 0.03);
+    }
+
     private String toJson(List<Double> vector) {
         try {
             return objectMapper.writeValueAsString(vector);
         } catch (JsonProcessingException ex) {
             throw new IllegalStateException("Unable to serialize embedding vector", ex);
+        }
+    }
+
+    private String toJson(Map<String, String> metadata) {
+        try {
+            return objectMapper.writeValueAsString(metadata);
+        } catch (JsonProcessingException ex) {
+            throw new IllegalStateException("Unable to serialize chunk metadata", ex);
         }
     }
 

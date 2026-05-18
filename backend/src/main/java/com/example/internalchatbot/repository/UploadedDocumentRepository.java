@@ -8,4 +8,6 @@ import java.util.List;
 public interface UploadedDocumentRepository extends JpaRepository<UploadedDocument, Long> {
 
     List<UploadedDocument> findBySessionIdOrderByCreatedAtDesc(String sessionId);
+
+    List<UploadedDocument> findByContentHashAndPrivateModeFalse(String contentHash);
 }

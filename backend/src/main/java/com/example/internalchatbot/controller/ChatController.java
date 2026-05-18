@@ -35,7 +35,8 @@ public class ChatController {
         SseEmitter emitter = new SseEmitter(120_000L);
         Thread.startVirtualThread(() -> {
             try {
-                chatService.stream(request, token -> sendToken(emitter, token));
+                ChatResponse response = chatService.stream(request, token -> sendToken(emitter, token));
+                emitter.send(SseEmitter.event().name("done").data(response));
                 emitter.complete();
             } catch (Exception ex) {
                 emitter.completeWithError(ex);

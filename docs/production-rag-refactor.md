@@ -1,0 +1,167 @@
+# Production RAG Refactor
+
+This refactor removes the incident-analysis module and upgrades the chatbot into a more ChatGPT-like RAG assistant.
+
+## Removed Module
+
+Deleted backend files:
+
+- `controller/IncidentController.java`
+- `service/IncidentAnalysisService.java`
+- `dto/IncidentAnalysisRequest.java`
+- `dto/IncidentAnalysisResponse.java`
+
+Deleted frontend references:
+
+- Incident textarea/form
+- Incident API client method
+- Incident-specific copy and placeholders
+
+The `/api/incidents/analyze` route no longer exists.
+
+## New Dependencies
+
+```xml
+org.apache.tika:tika-core:3.3.0
+org.apache.tika:tika-parsers-standard-package:3.3.0
+org.apache.commons:commons-csv:1.14.1
+```
+
+Existing RAG dependencies remain:
+
+```xml
+dev.langchain4j:langchain4j-ollama:1.14.1
+dev.langchain4j:langchain4j-chroma:1.14.1-beta24
+```
+
+## Updated Architecture
+
+```text
+controller/
+  ChatController.java
+  DocumentController.java
+  SessionController.java
+  LlmController.java
+service/
+  ChatService.java
+  DocumentExtractionService.java
+  UrlReaderService.java
+  TextChunker.java
+  EmbeddingService.java
+  VectorStoreService.java
+  ChromaEmbeddingStoreProvider.java
+  ChromaHealthClient.java
+  SessionService.java
+entity/
+  UploadedDocument.java
+  EmbeddingMetadata.java
+  ChatSession.java
+  ChatMessage.java
+repository/
+  UploadedDocumentRepository.java
+  EmbeddingMetadataRepository.java
+```
+
+## RAG Flow
+
+```text
+User question
+-> session memory lookup
+-> follow-up query rewriting
+-> Ollama embedding generation
+-> ChromaDB V2 retrieval
+-> local hybrid fallback retrieval
+-> relevance filtering and context ranking
+-> source-aware prompt construction
+-> streamed Ollama response
+```
+
+## Document Ingestion
+
+Supported inputs:
+
+- PDF with page-aware PDFBox extraction
+- DOCX with heading/section-aware POI extraction
+- TXT and LOG with virtual page splitting
+- CSV with header-aware row normalization
+- Other supported formats through Apache Tika fallback
+
+Each chunk stores:
+
+- source name
+- source type
+- source URL
+- page number
+- section title
+- chunk index
+- token estimate
+- content hash
+- parser metadata
+
+OCR is represented as a safe placeholder: scanned PDFs fail with a clear OCR-required message instead of silently indexing empty text.
+
+## URL Ingestion
+
+The URL reader now:
+
+- validates allowed domains
+- reads sitemap URLs when present
+- crawls same-host links up to configured depth/page limits
+- removes boilerplate HTML
+- deduplicates content by hash
+- extracts title and URL metadata per page
+
+Configuration:
+
+```properties
+url.max-pages=8
+url.max-depth=2
+url.timeout=15s
+url.max-extracted-chars=120000
+```
+
+## Conversation Improvements
+
+- Session-scoped memory only
+- Follow-up query rewriting before retrieval
+- Context window compression through `rag.max-context-chars`
+- Source citations in prompt context
+- Streaming tokens plus final response metadata
+- No self-indexing of ordinary assistant replies, which prevents retrieval pollution
+
+## Frontend Improvements
+
+- Incident panel removed
+- Streaming chat consumption
+- Markdown and code block rendering
+- Upload progress
+- Source references with page/section metadata
+- CSV upload support
+- Responsive dark mode
+
+## Migration Steps
+
+1. Pull the latest `specile-features` branch.
+2. Restart the backend so Hibernate can add the new metadata columns.
+3. If old local H2 data causes schema conflicts, stop the app and delete `backend/data`.
+4. Confirm Ollama models exist:
+
+```bash
+ollama pull llama3.2
+ollama pull nomic-embed-text
+```
+
+5. Confirm ChromaDB V2 heartbeat:
+
+```bash
+curl http://localhost:8000/api/v2/heartbeat
+```
+
+## Best Practices Applied
+
+- ChromaDB client is lazy and health-checked.
+- Ingestion keeps document metadata separate from generated answers.
+- Private mode skips persistence and embedding storage.
+- Retrieval has vector and keyword fallback paths.
+- Large content is summarized from bounded page samples.
+- The UI no longer exposes backend credentials or private ingestion internals.

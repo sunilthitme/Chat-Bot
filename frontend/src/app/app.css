@@ -19,9 +19,9 @@
 .new-chat,
 .session-item,
 .private-toggle,
+.theme-toggle,
 .upload-button,
 .url-form button,
-.incident-form button,
 .chat-form button {
   border: 0;
   border-radius: 8px;
@@ -116,6 +116,13 @@
   color: #ffffff;
 }
 
+.theme-toggle {
+  height: 34px;
+  padding: 0 12px;
+  background: #dbeafe;
+  color: #1e3a8a;
+}
+
 .status {
   padding: 7px 10px;
   border-radius: 999px;
@@ -134,6 +141,22 @@
   background: #f8fafc;
 }
 
+.upload-progress {
+  grid-column: 1 / -1;
+  align-self: center;
+  height: 8px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #dbeafe;
+}
+
+.upload-progress span {
+  display: block;
+  height: 100%;
+  background: #2563eb;
+  transition: width 0.2s ease;
+}
+
 .upload-button {
   display: grid;
   place-items: center;
@@ -144,7 +167,6 @@
 }
 
 .url-form,
-.incident-form,
 .chat-form {
   display: grid;
   gap: 10px;
@@ -155,7 +177,6 @@
 }
 
 .url-form input,
-.incident-form textarea,
 .chat-form input {
   width: 100%;
   min-width: 0;
@@ -171,20 +192,13 @@
   padding: 0 12px;
 }
 
-.incident-form textarea {
-  resize: vertical;
-  padding: 10px 12px;
-}
-
 .url-form input:focus,
-.incident-form textarea:focus,
 .chat-form input:focus {
   border-color: #2563eb;
   box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.16);
 }
 
 .url-form button,
-.incident-form button,
 .chat-form button {
   min-width: 82px;
   background: #2563eb;
@@ -218,6 +232,33 @@
   line-height: 1.45;
   white-space: pre-wrap;
   word-break: break-word;
+}
+
+.message-content :is(h1, h2, h3) {
+  margin: 0 0 8px;
+  font-size: 16px;
+}
+
+.message-content pre {
+  overflow-x: auto;
+  margin: 10px 0 0;
+  padding: 12px;
+  border-radius: 8px;
+  background: #0f172a;
+  color: #e2e8f0;
+}
+
+.message-content code {
+  padding: 2px 5px;
+  border-radius: 5px;
+  background: #e2e8f0;
+  color: #0f172a;
+}
+
+.message-content pre code {
+  padding: 0;
+  background: transparent;
+  color: inherit;
 }
 
 .bot-row .message-bubble {
@@ -262,15 +303,10 @@
   animation-delay: 0.3s;
 }
 
-.incident-form,
 .chat-form {
   padding: 12px 24px;
   border-top: 1px solid #e2e8f0;
   background: #ffffff;
-}
-
-.incident-form {
-  grid-template-columns: 1fr auto;
 }
 
 .chat-form {
@@ -282,6 +318,40 @@ input:disabled,
 textarea:disabled {
   cursor: not-allowed;
   opacity: 0.65;
+}
+
+.app-shell.dark {
+  background: #0f172a;
+  color: #e2e8f0;
+}
+
+.app-shell.dark .chat-window,
+.app-shell.dark .chat-header,
+.app-shell.dark .chat-form {
+  background: #111827;
+}
+
+.app-shell.dark .tool-strip,
+.app-shell.dark .messages {
+  background: #0f172a;
+}
+
+.app-shell.dark .bot-row .message-bubble {
+  background: #1f2937;
+  border-color: #334155;
+  color: #e2e8f0;
+}
+
+.app-shell.dark .url-form input,
+.app-shell.dark .chat-form input {
+  background: #111827;
+  border-color: #334155;
+  color: #e2e8f0;
+}
+
+.app-shell.dark .sources {
+  border-top-color: #334155;
+  color: #cbd5e1;
 }
 
 @keyframes pulse {
@@ -305,7 +375,6 @@ textarea:disabled {
   }
 
   .tool-strip,
-  .incident-form,
   .chat-form {
     grid-template-columns: 1fr;
     padding: 12px 16px;

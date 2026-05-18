@@ -1,6 +1,6 @@
 # Enterprise AI Chatbot Architecture
 
-This branch adds a DB-first enterprise chatbot with RAG, Ollama, multi-session memory, private mode, document ingestion, URL ingestion, authenticated URL capture, and ServiceNow incident analysis.
+This branch adds a DB-first enterprise chatbot with RAG, Ollama, multi-session memory, private mode, document ingestion, URL crawling, authenticated URL capture, and ChromaDB-backed knowledge retrieval.
 
 ## Runtime Flow
 
@@ -21,7 +21,6 @@ backend/src/main/java/com/example/internalchatbot/
   controller/
     ChatController.java
     DocumentController.java
-    IncidentController.java
     LlmController.java
     SessionController.java
     ApiExceptionHandler.java
@@ -31,8 +30,6 @@ backend/src/main/java/com/example/internalchatbot/
     ChatSessionResponse.java
     CreateSessionRequest.java
     DocumentUploadResponse.java
-    IncidentAnalysisRequest.java
-    IncidentAnalysisResponse.java
     PrivateModeRequest.java
     SourceReference.java
     StoredMessageResponse.java
@@ -56,7 +53,6 @@ backend/src/main/java/com/example/internalchatbot/
     ChatService.java
     DocumentExtractionService.java
     EmbeddingService.java
-    IncidentAnalysisService.java
     KnowledgeIngestionService.java
     LlmService.java
     SessionService.java
@@ -76,8 +72,6 @@ backend/src/main/java/com/example/internalchatbot/
 `DocumentController` uploads PDF, DOCX, TXT, and LOG files, then delegates extraction and indexing to `KnowledgeIngestionService`.
 
 `UrlReaderService` validates URL schemes and domains before reading with Jsoup. `AuthenticatedUrlReaderService` uses Selenium only when backend properties enable login-required capture. Passwords remain backend-only in `application.properties`.
-
-`IncidentController` delegates ServiceNow analysis to `IncidentAnalysisService`, which prompts Ollama for root cause, troubleshooting steps, and likely resolution.
 
 `EmbeddingService` uses LangChain4j `OllamaEmbeddingModel` with `nomic-embed-text`. `VectorStoreService` saves local vector metadata and syncs chunks to ChromaDB API V2 when `chroma.enabled=true`. Chroma initialization is lazy and health-checked so Spring Boot startup does not fail when Chroma is unavailable.
 
@@ -110,7 +104,6 @@ GET  /api/sessions/{sessionId}/messages
 PATCH /api/sessions/{sessionId}/private-mode
 POST /api/knowledge/documents
 POST /api/knowledge/urls
-POST /api/incidents/analyze
 POST /api/llm/generate
 ```
 
@@ -143,7 +136,6 @@ The Angular app now has a ChatGPT-style layout with:
 - Private mode toggle.
 - File upload action.
 - URL ingestion form.
-- ServiceNow incident analysis panel.
 - Typing/loading animation.
 - Source display for RAG results.
 

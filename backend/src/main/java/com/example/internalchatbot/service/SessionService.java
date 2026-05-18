@@ -9,6 +9,7 @@ import com.example.internalchatbot.entity.ChatSession;
 import com.example.internalchatbot.repository.AppUserRepository;
 import com.example.internalchatbot.repository.ChatMessageRepository;
 import com.example.internalchatbot.repository.ChatSessionRepository;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
@@ -95,11 +96,18 @@ public class SessionService {
     }
 
     public String memoryForSession(String sessionId) {
+        return memoryForSession(sessionId, 6_000);
+    }
+
+    public String memoryForSession(String sessionId, int maxChars) {
         List<ChatMessage> messages = chatMessageRepository.findTop12BySessionIdOrderByCreatedAtDesc(sessionId);
         StringBuilder memory = new StringBuilder();
         for (int index = messages.size() - 1; index >= 0; index--) {
             ChatMessage message = messages.get(index);
             memory.append(message.getRole()).append(": ").append(message.getContent()).append("\n");
+            if (memory.length() > maxChars) {
+                return memory.substring(Math.max(0, memory.length() - maxChars));
+            }
         }
         return memory.toString();
     }
@@ -122,12 +130,19 @@ public class SessionService {
         return session;
     }
 
-    private void ensureUser(String username) {
-        appUserRepository.findByUsernameIgnoreCase(username).orElseGet(() -> {
+    private synchronized void ensureUser(String username) {
+        if (appUserRepository.findByUsernameIgnoreCase(username).isPresent()) {
+            return;
+        }
+        try {
             AppUser appUser = new AppUser();
             appUser.setUsername(username);
-            return appUserRepository.save(appUser);
-        });
+            appUserRepository.save(appUser);
+        } catch (DataIntegrityViolationException ex) {
+            // Another request created the same user between the read and insert.
+            appUserRepository.findByUsernameIgnoreCase(username)
+                    .orElseThrow(() -> ex);
+        }
     }
 
     private String normalizeUserKey(String userKey) {

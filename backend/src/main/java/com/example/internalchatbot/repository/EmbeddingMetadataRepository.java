@@ -7,7 +7,11 @@ import java.util.List;
 
 public interface EmbeddingMetadataRepository extends JpaRepository<EmbeddingMetadata, Long> {
 
-    List<EmbeddingMetadata> findTop300ByPrivateModeFalseOrderByCreatedAtDesc();
+    List<EmbeddingMetadata> findTop500ByPrivateModeFalseOrderByCreatedAtDesc();
 
     List<EmbeddingMetadata> findTop300BySessionIdAndPrivateModeFalseOrderByCreatedAtDesc(String sessionId);
+
+    List<EmbeddingMetadata> findByDocumentIdAndPrivateModeFalse(Long documentId);
+
+    List<EmbeddingMetadata> findByContentHashAndPrivateModeFalse(String contentHash);
 }

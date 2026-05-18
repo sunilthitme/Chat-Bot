@@ -5,6 +5,8 @@ import com.example.internalchatbot.dto.UrlIngestResponse;
 import com.example.internalchatbot.entity.ChatSession;
 import com.example.internalchatbot.entity.UploadedDocument;
 import com.example.internalchatbot.repository.UploadedDocumentRepository;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -12,6 +14,7 @@ import org.springframework.web.client.RestClientException;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.util.List;
+import java.util.Map;
 
 @Service
 public class KnowledgeIngestionService {
@@ -26,6 +29,7 @@ public class KnowledgeIngestionService {
     private final VectorStoreService vectorStoreService;
     private final SessionService sessionService;
     private final LlmService llmService;
+    private final ObjectMapper objectMapper;
 
     public KnowledgeIngestionService(
             DocumentExtractionService documentExtractionService,
@@ -45,6 +49,7 @@ public class KnowledgeIngestionService {
         this.vectorStoreService = vectorStoreService;
         this.sessionService = sessionService;
         this.llmService = llmService;
+        this.objectMapper = new ObjectMapper();
     }
 
     public DocumentUploadResponse ingestFile(
@@ -53,31 +58,33 @@ public class KnowledgeIngestionService {
             String userKey,
             boolean privateMode
     ) {
-        String extractedText = documentExtractionService.extractText(file);
-        ChatSession session = sessionService.getOrCreateSession(sessionId, userKey, privateMode, file.getOriginalFilename());
-        String sourceName = file.getOriginalFilename() == null ? "uploaded-file" : file.getOriginalFilename();
+        ExtractedDocument extractedDocument = documentExtractionService.extract(file);
+        ChatSession session = sessionService.getOrCreateSession(sessionId, userKey, privateMode, extractedDocument.sourceName());
 
         if (privateMode) {
             return new DocumentUploadResponse(
                     null,
                     session.getId(),
-                    sourceName,
+                    extractedDocument.sourceName(),
                     0,
                     true,
-                    "Private mode is enabled. Text was read for this request only and was not stored."
+                    "Private mode is enabled. Document text was parsed for this request only and was not stored."
             );
         }
 
-        UploadedDocument document = saveDocument(session.getId(), sourceName, "file", null, extractedText, false);
-        int chunksStored = storeChunks("document", session.getId(), document.getId(), sourceName, "file", extractedText);
+        UploadedDocument document = saveDocument(session.getId(), extractedDocument, "INDEXING");
+        int chunksStored = storeChunks("document", session.getId(), document.getId(), extractedDocument);
+        document.setChunkCount(chunksStored);
+        document.setIngestionStatus(chunksStored > 0 ? "COMPLETED" : "NO_EMBEDDINGS");
+        uploadedDocumentRepository.save(document);
 
         return new DocumentUploadResponse(
                 document.getId(),
                 session.getId(),
-                sourceName,
+                extractedDocument.sourceName(),
                 chunksStored,
                 false,
-                "Document indexed for RAG retrieval."
+                "Document indexed with " + extractedDocument.pageCount() + " parsed page(s)."
         );
     }
 
@@ -88,16 +95,20 @@ public class KnowledgeIngestionService {
             boolean privateMode,
             boolean loginRequired
     ) {
-        String extractedText = urlReaderService.read(url, loginRequired);
+        ExtractedDocument extractedDocument = urlReaderService.read(url, loginRequired);
         ChatSession session = sessionService.getOrCreateSession(sessionId, userKey, privateMode, url);
-        String summary = summarizeUrl(extractedText);
+        String summary = summarizeExtractedDocument(extractedDocument);
 
         if (privateMode) {
             return new UrlIngestResponse(null, session.getId(), url, 0, true, summary);
         }
 
-        UploadedDocument document = saveDocument(session.getId(), url, "url", url, extractedText, false);
-        int chunksStored = storeChunks("url", session.getId(), document.getId(), url, "url", extractedText);
+        UploadedDocument document = saveDocument(session.getId(), extractedDocument, "INDEXING");
+        int chunksStored = storeChunks("url", session.getId(), document.getId(), extractedDocument);
+        document.setChunkCount(chunksStored);
+        document.setIngestionStatus(chunksStored > 0 ? "COMPLETED" : "NO_EMBEDDINGS");
+        uploadedDocumentRepository.save(document);
+
         return new UrlIngestResponse(document.getId(), session.getId(), url, chunksStored, false, summary);
     }
 
@@ -105,24 +116,34 @@ public class KnowledgeIngestionService {
         if (privateMode || content == null || content.isBlank()) {
             return 0;
         }
-        return storeChunks("conversation", sessionId, null, sourceName, "conversation", content);
+        ExtractedDocument document = new ExtractedDocument(
+                sourceName,
+                "conversation",
+                null,
+                "text/plain",
+                "conversation-memory",
+                ContentHash.sha256(content),
+                Map.of("source", "assistant-response"),
+                List.of(new ExtractedPage(1, "Conversation summary", content, Map.of("parser", "conversation")))
+        );
+        return storeChunks("conversation", sessionId, null, document);
     }
 
-    private UploadedDocument saveDocument(
-            String sessionId,
-            String sourceName,
-            String sourceType,
-            String sourceUrl,
-            String extractedText,
-            boolean privateMode
-    ) {
+    private UploadedDocument saveDocument(String sessionId, ExtractedDocument extractedDocument, String status) {
         UploadedDocument document = new UploadedDocument();
         document.setSessionId(sessionId);
-        document.setSourceName(sourceName);
-        document.setSourceType(sourceType);
-        document.setSourceUrl(sourceUrl);
-        document.setExtractedText(extractedText);
-        document.setPrivateMode(privateMode);
+        document.setSourceName(extractedDocument.sourceName());
+        document.setSourceType(extractedDocument.sourceType());
+        document.setSourceUrl(extractedDocument.sourceUrl());
+        document.setMediaType(extractedDocument.mediaType());
+        document.setParserName(extractedDocument.parserName());
+        document.setContentHash(extractedDocument.contentHash());
+        document.setPageCount(extractedDocument.pageCount());
+        document.setChunkCount(0);
+        document.setIngestionStatus(status);
+        document.setExtractedText(extractedDocument.combinedText());
+        document.setMetadataJson(toJson(extractedDocument.metadata()));
+        document.setPrivateMode(false);
         return uploadedDocumentRepository.save(document);
     }
 
@@ -130,40 +151,90 @@ public class KnowledgeIngestionService {
             String namespace,
             String sessionId,
             Long documentId,
-            String sourceName,
-            String sourceType,
-            String extractedText
+            ExtractedDocument extractedDocument
     ) {
+        List<DocumentChunk> chunks = textChunker.chunk(extractedDocument);
+        if (chunks.isEmpty()) {
+            return 0;
+        }
+
+        List<String> chunkTexts = chunks.stream()
+                .map(DocumentChunk::text)
+                .toList();
+
+        List<List<Double>> vectors;
+        try {
+            vectors = embeddingService.embedAll(chunkTexts);
+        } catch (RuntimeException ex) {
+            log.warn("Batch embedding generation failed for source={}. Falling back to per-chunk embedding.", extractedDocument.sourceName(), ex);
+            vectors = chunkTexts.stream()
+                    .map(text -> {
+                        try {
+                            return embeddingService.embed(text);
+                        } catch (RuntimeException innerEx) {
+                            log.warn("Embedding generation failed for source={}", extractedDocument.sourceName(), innerEx);
+                            return List.<Double>of();
+                        }
+                    })
+                    .toList();
+        }
+
         int stored = 0;
-        for (String chunk : textChunker.chunk(extractedText)) {
-            try {
-                List<Double> vector = embeddingService.embed(chunk);
-                if (!vector.isEmpty()) {
-                    vectorStoreService.store(namespace, sessionId, documentId, sourceName, sourceType, chunk, vector, false);
-                    stored++;
-                }
-            } catch (RuntimeException ex) {
-                log.warn("Embedding generation failed for source={}", sourceName, ex);
+        for (int index = 0; index < chunks.size(); index++) {
+            List<Double> vector = index < vectors.size() ? vectors.get(index) : List.of();
+            if (vector.isEmpty()) {
+                continue;
             }
+            vectorStoreService.store(namespace, sessionId, documentId, chunks.get(index), vector, false);
+            stored++;
         }
         return stored;
     }
 
-    private String summarizeUrl(String extractedText) {
+    private String summarizeExtractedDocument(ExtractedDocument document) {
         if (!llmService.isEnabled()) {
-            return "URL content ingested.";
+            return "Content ingested from " + document.pageCount() + " page(s).";
         }
+        String content = buildSummaryContent(document);
         String prompt = """
-                Summarize the following URL content for future enterprise knowledge retrieval.
-                Keep it concise and factual.
+                Summarize this source for enterprise retrieval.
+                Preserve important facts, entities, procedures, warnings, and decisions.
+                Keep the summary concise and useful for future question answering.
+
+                Source: %s
+                Pages: %d
 
                 Content:
                 %s
-                """.formatted(extractedText.length() > 8000 ? extractedText.substring(0, 8000) : extractedText);
+                """.formatted(document.sourceName(), document.pageCount(), content);
         try {
             return llmService.generateResponse(prompt, 0.1);
         } catch (RestClientException ex) {
-            return "URL content ingested. Summary unavailable because Ollama is not reachable.";
+            return "Content ingested. Summary unavailable because Ollama is not reachable.";
+        }
+    }
+
+    private String buildSummaryContent(ExtractedDocument document) {
+        StringBuilder builder = new StringBuilder();
+        for (ExtractedPage page : document.pages()) {
+            if (builder.length() > 12_000) {
+                break;
+            }
+            builder.append("Page ").append(page.pageNumber()).append(": ");
+            if (page.sectionTitle() != null && !page.sectionTitle().isBlank()) {
+                builder.append(page.sectionTitle()).append('\n');
+            }
+            String text = page.text();
+            builder.append(text, 0, Math.min(2_000, text.length())).append("\n\n");
+        }
+        return builder.toString();
+    }
+
+    private String toJson(Map<String, String> metadata) {
+        try {
+            return objectMapper.writeValueAsString(metadata);
+        } catch (JsonProcessingException ex) {
+            throw new IllegalStateException("Unable to serialize document metadata", ex);
         }
     }
 }
