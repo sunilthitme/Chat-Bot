@@ -5,25 +5,27 @@ import com.example.internalchatbot.dto.ChatResponse;
 import com.example.internalchatbot.dto.SourceReference;
 import com.example.internalchatbot.entity.ChatQuestion;
 import com.example.internalchatbot.entity.ChatSession;
-import com.example.internalchatbot.repository.ChatQuestionRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestClientException;
 
-import java.util.Arrays;
+import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.UUID;
 import java.util.function.Consumer;
 
-// Service contains the chatbot matching logic.
 @Service
 public class ChatService {
 
     private static final Logger log = LoggerFactory.getLogger(ChatService.class);
     private static final String NOT_FOUND_REPLY = "Sorry, I could not find information.";
 
-    private final ChatQuestionRepository chatQuestionRepository;
+    private final ChatQuestionIndexService chatQuestionIndexService;
     private final LlmService llmService;
     private final SessionService sessionService;
     private final EmbeddingService embeddingService;
@@ -31,25 +33,37 @@ public class ChatService {
     private final int ragTopK;
     private final double minScore;
     private final int maxContextChars;
+    private final int internalSearchLimit;
+    private final Map<String, Optional<String>> answerCache;
 
     public ChatService(
-            ChatQuestionRepository chatQuestionRepository,
+            ChatQuestionIndexService chatQuestionIndexService,
             LlmService llmService,
             SessionService sessionService,
             EmbeddingService embeddingService,
             VectorStoreService vectorStoreService,
-            @Value("${rag.top-k:6}") int ragTopK,
+            @Value("${rag.top-k:5}") int ragTopK,
             @Value("${rag.min-score:0.20}") double minScore,
-            @Value("${rag.max-context-chars:9000}") int maxContextChars
+            @Value("${rag.max-context-chars:9000}") int maxContextChars,
+            @Value("${chat.internal-search-limit:5}") int internalSearchLimit,
+            @Value("${chat.answer-cache-size:256}") int answerCacheSize
     ) {
-        this.chatQuestionRepository = chatQuestionRepository;
+        this.chatQuestionIndexService = chatQuestionIndexService;
         this.llmService = llmService;
         this.sessionService = sessionService;
         this.embeddingService = embeddingService;
         this.vectorStoreService = vectorStoreService;
-        this.ragTopK = ragTopK;
+        this.ragTopK = Math.max(1, Math.min(ragTopK, 10));
         this.minScore = minScore;
         this.maxContextChars = maxContextChars;
+        this.internalSearchLimit = Math.max(1, Math.min(internalSearchLimit, 10));
+        int safeCacheSize = Math.max(32, answerCacheSize);
+        this.answerCache = Collections.synchronizedMap(new LinkedHashMap<>(128, 0.75f, true) {
+            @Override
+            protected boolean removeEldestEntry(Map.Entry<String, Optional<String>> eldest) {
+                return size() > safeCacheSize;
+            }
+        });
     }
 
     public String ask(String message) {
@@ -59,36 +73,65 @@ public class ChatService {
     }
 
     public ChatResponse ask(ChatRequest request) {
-        String message = request.getMessage();
-        ChatSession session = sessionService.getOrCreateSession(
-                request.getSessionId(),
-                request.getUserKey(),
-                request.isPrivateMode(),
-                message
+        PreparedChat prepared = prepare(request);
+        long llmStartedAt = System.nanoTime();
+        String reply = generateReply(prepared.prompt(), prepared.storedAnswer(), prepared.requestId());
+        sessionService.saveMessage(prepared.sessionId(), "assistant", reply, prepared.privateMode());
+
+        log.info(
+                "chat request completed requestId={} sessionId={} stream=false sources={} llmMs={} totalMs={}",
+                prepared.requestId(),
+                prepared.sessionId(),
+                prepared.retrievedKnowledge().size(),
+                elapsedMillis(llmStartedAt),
+                elapsedMillis(prepared.startedAt())
         );
-        boolean privateMode = session.isPrivateMode() || request.isPrivateMode();
-
-        sessionService.saveMessage(session.getId(), "user", message, privateMode);
-
-        String memory = privateMode ? "" : sessionService.memoryForSession(session.getId(), 5_000);
-        String rewrittenQuestion = rewriteQuestion(message, memory);
-        String storedAnswer = findStoredAnswer(normalize(rewrittenQuestion));
-        List<VectorSearchResult> retrievedKnowledge = retrieveKnowledge(rewrittenQuestion, privateMode);
-        String prompt = buildPrompt(message, rewrittenQuestion, memory, storedAnswer, retrievedKnowledge, privateMode);
-
-        String reply = generateReply(prompt, storedAnswer);
-        sessionService.saveMessage(session.getId(), "assistant", reply, privateMode);
 
         return new ChatResponse(
-                session.getId(),
+                prepared.sessionId(),
                 reply,
-                privateMode,
-                toSourceReferences(retrievedKnowledge)
+                prepared.privateMode(),
+                toSourceReferences(prepared.retrievedKnowledge())
         );
     }
 
     public ChatResponse stream(ChatRequest request, Consumer<String> onToken) {
-        String message = request.getMessage();
+        PreparedChat prepared = prepare(request);
+        long llmStartedAt = System.nanoTime();
+
+        if (!llmService.isEnabled()) {
+            String fallback = prepared.storedAnswer() == null ? NOT_FOUND_REPLY : prepared.storedAnswer();
+            onToken.accept(fallback);
+            sessionService.saveMessage(prepared.sessionId(), "assistant", fallback, prepared.privateMode());
+            return response(prepared, fallback, llmStartedAt, true);
+        }
+
+        StringBuilder streamedReply = new StringBuilder();
+        try {
+            llmService.streamResponse(prepared.prompt(), token -> {
+                streamedReply.append(token);
+                onToken.accept(token);
+            });
+        } catch (RestClientException ex) {
+            log.warn("Ollama streaming failed requestId={}. Falling back to stored answer when available.", prepared.requestId(), ex);
+        }
+
+        String reply = streamedReply.isEmpty()
+                ? (prepared.storedAnswer() == null ? NOT_FOUND_REPLY : prepared.storedAnswer())
+                : streamedReply.toString();
+        if (streamedReply.isEmpty()) {
+            onToken.accept(reply);
+        }
+        sessionService.saveMessage(prepared.sessionId(), "assistant", reply, prepared.privateMode());
+        return response(prepared, reply, llmStartedAt, true);
+    }
+
+    private PreparedChat prepare(ChatRequest request) {
+        long startedAt = System.nanoTime();
+        String requestId = UUID.randomUUID().toString().substring(0, 8);
+        String message = request.getMessage() == null ? "" : request.getMessage().trim();
+
+        long sessionStartedAt = System.nanoTime();
         ChatSession session = sessionService.getOrCreateSession(
                 request.getSessionId(),
                 request.getUserKey(),
@@ -96,64 +139,103 @@ public class ChatService {
                 message
         );
         boolean privateMode = session.isPrivateMode() || request.isPrivateMode();
-
         sessionService.saveMessage(session.getId(), "user", message, privateMode);
+        long sessionMs = elapsedMillis(sessionStartedAt);
 
+        long memoryStartedAt = System.nanoTime();
         String memory = privateMode ? "" : sessionService.memoryForSession(session.getId(), 5_000);
-        String rewrittenQuestion = rewriteQuestion(message, memory);
-        String storedAnswer = findStoredAnswer(normalize(rewrittenQuestion));
-        List<VectorSearchResult> retrievedKnowledge = retrieveKnowledge(rewrittenQuestion, privateMode);
-        String prompt = buildPrompt(message, rewrittenQuestion, memory, storedAnswer, retrievedKnowledge, privateMode);
+        String retrievalQuestion = buildRetrievalQuery(message, memory);
+        long memoryMs = elapsedMillis(memoryStartedAt);
 
-        if (!llmService.isEnabled()) {
-            String fallback = storedAnswer == null ? NOT_FOUND_REPLY : storedAnswer;
-            onToken.accept(fallback);
-            sessionService.saveMessage(session.getId(), "assistant", fallback, privateMode);
-            return new ChatResponse(session.getId(), fallback, privateMode, toSourceReferences(retrievedKnowledge));
-        }
+        long dbStartedAt = System.nanoTime();
+        String normalizedMessage = normalize(message);
+        String storedAnswer = findStoredAnswer(normalizedMessage, requestId);
+        long dbMs = elapsedMillis(dbStartedAt);
 
-        StringBuilder streamedReply = new StringBuilder();
-        try {
-            llmService.streamResponse(prompt, token -> {
-                streamedReply.append(token);
-                onToken.accept(token);
-            });
-        } catch (RestClientException ex) {
-            log.warn("Ollama streaming failed. Falling back to stored answer when available.", ex);
-        }
+        long ragStartedAt = System.nanoTime();
+        List<VectorSearchResult> retrievedKnowledge = retrieveKnowledge(retrievalQuestion, privateMode);
+        long ragMs = elapsedMillis(ragStartedAt);
 
-        String reply = streamedReply.isEmpty()
-                ? (storedAnswer == null ? NOT_FOUND_REPLY : storedAnswer)
-                : streamedReply.toString();
-        if (streamedReply.isEmpty()) {
-            onToken.accept(reply);
-        }
-        sessionService.saveMessage(session.getId(), "assistant", reply, privateMode);
-        return new ChatResponse(session.getId(), reply, privateMode, toSourceReferences(retrievedKnowledge));
+        String prompt = buildPrompt(message, retrievalQuestion, memory, storedAnswer, retrievedKnowledge, privateMode);
+        log.info(
+                "chat request prepared requestId={} sessionId={} privateMode={} dbHit={} sources={} sessionMs={} memoryMs={} dbMs={} ragMs={} prepMs={}",
+                requestId,
+                session.getId(),
+                privateMode,
+                storedAnswer != null,
+                retrievedKnowledge.size(),
+                sessionMs,
+                memoryMs,
+                dbMs,
+                ragMs,
+                elapsedMillis(startedAt)
+        );
+
+        return new PreparedChat(
+                requestId,
+                startedAt,
+                session.getId(),
+                privateMode,
+                storedAnswer,
+                retrievedKnowledge,
+                prompt
+        );
     }
 
-    private String findStoredAnswer(String normalizedMessage) {
-        List<ChatQuestion> directMatches = chatQuestionRepository.searchByQuestionOrKeywords(normalizedMessage);
-        if (!directMatches.isEmpty()) {
-            return directMatches.getFirst().getAnswer();
+    private String findStoredAnswer(String normalizedMessage, String requestId) {
+        if (normalizedMessage == null || normalizedMessage.isBlank()) {
+            return null;
         }
 
-        return findByImportantWords(normalizedMessage);
+        Optional<String> cached = answerCache.get(normalizedMessage);
+        if (cached != null) {
+            log.debug("internal DB answer cache hit requestId={} queryHash={}", requestId, queryHash(normalizedMessage));
+            return cached.orElse(null);
+        }
+
+        List<ChatQuestion> candidates = chatQuestionIndexService.search(normalizedMessage, internalSearchLimit);
+        String answer = rankStoredAnswer(normalizedMessage, candidates);
+        answerCache.put(normalizedMessage, Optional.ofNullable(answer));
+
+        log.debug(
+                "internal DB lookup completed requestId={} queryHash={} candidates={} hit={}",
+                requestId,
+                queryHash(normalizedMessage),
+                candidates.size(),
+                answer != null
+        );
+        return answer;
     }
 
-    private String findByImportantWords(String normalizedMessage) {
-        List<String> words = Arrays.stream(normalizedMessage.split(" "))
-                .filter(word -> word.length() > 2)
-                .toList();
-
-        for (String word : words) {
-            List<ChatQuestion> matches = chatQuestionRepository.searchByQuestionOrKeywords(word);
-            if (!matches.isEmpty()) {
-                return matches.getFirst().getAnswer();
-            }
+    private String rankStoredAnswer(String normalizedMessage, List<ChatQuestion> candidates) {
+        if (candidates.isEmpty()) {
+            return null;
         }
 
-        return null;
+        List<String> queryTokens = chatQuestionIndexService.tokenize(normalizedMessage);
+        return candidates.stream()
+                .max((left, right) -> Double.compare(
+                        storedAnswerScore(left, normalizedMessage, queryTokens),
+                        storedAnswerScore(right, normalizedMessage, queryTokens)
+                ))
+                .map(ChatQuestion::getAnswer)
+                .orElse(null);
+    }
+
+    private double storedAnswerScore(ChatQuestion candidate, String normalizedMessage, List<String> queryTokens) {
+        String question = defaultString(candidate.getNormalizedQuestion());
+        String keywords = defaultString(candidate.getNormalizedKeywords());
+        String searchable = question + " " + keywords;
+
+        if (question.equals(normalizedMessage) || keywords.equals(normalizedMessage)) {
+            return 100;
+        }
+        if (question.startsWith(normalizedMessage) || keywords.startsWith(normalizedMessage)) {
+            return 75;
+        }
+
+        long matches = queryTokens.stream().filter(searchable::contains).count();
+        return matches * 10.0 / Math.max(1, queryTokens.size());
     }
 
     private List<VectorSearchResult> retrieveKnowledge(String message, boolean privateMode) {
@@ -163,7 +245,7 @@ public class ChatService {
 
         try {
             List<Double> queryVector = embeddingService.embed(message);
-            return vectorStoreService.search(message, queryVector, ragTopK * 2)
+            return vectorStoreService.search(message, queryVector, ragTopK)
                     .stream()
                     .filter(result -> result.score() >= minScore)
                     .limit(ragTopK)
@@ -174,36 +256,16 @@ public class ChatService {
         }
     }
 
-    private String rewriteQuestion(String message, String memory) {
-        if (!llmService.isEnabled() || memory == null || memory.isBlank()) {
+    private String buildRetrievalQuery(String message, String memory) {
+        if (memory == null || memory.isBlank()) {
             return message;
         }
-
-        String prompt = """
-                Rewrite the user's latest question into a standalone search query.
-                Keep entity names, document names, numbers, and technical terms.
-                Do not answer the question.
-
-                Conversation:
-                %s
-
-                Latest question:
-                %s
-
-                Standalone search query:
-                """.formatted(memory, message);
-        try {
-            String rewritten = llmService.generateResponse(prompt, 0.0).trim();
-            return rewritten.isBlank() ? message : rewritten;
-        } catch (RuntimeException ex) {
-            log.debug("Query rewrite failed. Using original user message.");
-            return message;
-        }
+        return trim(message + "\nRecent session context:\n" + memory, 1_200);
     }
 
     private String buildPrompt(
             String message,
-            String rewrittenQuestion,
+            String retrievalQuestion,
             String memory,
             String storedAnswer,
             List<VectorSearchResult> retrievedKnowledge,
@@ -228,7 +290,7 @@ public class ChatService {
                 Current session memory:
                 %s
 
-                Rewritten standalone question for retrieval:
+                Retrieval query:
                 %s
 
                 Internal DB answer:
@@ -242,14 +304,14 @@ public class ChatService {
                 """.formatted(
                 privateMode ? "enabled" : "disabled",
                 memory.isBlank() ? "No previous messages in this session." : memory,
-                rewrittenQuestion,
+                retrievalQuestion,
                 storedAnswer == null ? "No matching DB answer." : storedAnswer,
                 knowledge.isBlank() ? "No relevant vector knowledge found." : knowledge,
                 message
         );
     }
 
-    private String generateReply(String prompt, String storedAnswer) {
+    private String generateReply(String prompt, String storedAnswer, String requestId) {
         if (!llmService.isEnabled()) {
             return storedAnswer == null ? NOT_FOUND_REPLY : storedAnswer;
         }
@@ -260,10 +322,28 @@ public class ChatService {
                 return llmReply;
             }
         } catch (RuntimeException ex) {
-            log.warn("Ollama request failed. Falling back to stored answer when available.", ex);
+            log.warn("Ollama request failed requestId={}. Falling back to stored answer when available.", requestId, ex);
         }
 
         return storedAnswer == null ? NOT_FOUND_REPLY : storedAnswer;
+    }
+
+    private ChatResponse response(PreparedChat prepared, String reply, long llmStartedAt, boolean stream) {
+        log.info(
+                "chat request completed requestId={} sessionId={} stream={} sources={} llmMs={} totalMs={}",
+                prepared.requestId(),
+                prepared.sessionId(),
+                stream,
+                prepared.retrievedKnowledge().size(),
+                elapsedMillis(llmStartedAt),
+                elapsedMillis(prepared.startedAt())
+        );
+        return new ChatResponse(
+                prepared.sessionId(),
+                reply,
+                prepared.privateMode(),
+                toSourceReferences(prepared.retrievedKnowledge())
+        );
     }
 
     private List<SourceReference> toSourceReferences(List<VectorSearchResult> results) {
@@ -316,5 +396,28 @@ public class ChatService {
         return text == null
                 ? ""
                 : text.toLowerCase().replaceAll("[^a-z0-9 ]", " ").replaceAll("\\s+", " ").trim();
+    }
+
+    private String defaultString(String value) {
+        return value == null ? "" : value;
+    }
+
+    private String queryHash(String normalizedMessage) {
+        return Integer.toHexString(normalizedMessage.hashCode());
+    }
+
+    private long elapsedMillis(long startedAt) {
+        return (System.nanoTime() - startedAt) / 1_000_000;
+    }
+
+    private record PreparedChat(
+            String requestId,
+            long startedAt,
+            String sessionId,
+            boolean privateMode,
+            String storedAnswer,
+            List<VectorSearchResult> retrievedKnowledge,
+            String prompt
+    ) {
     }
 }

@@ -116,9 +116,15 @@ export class ChatService {
               }
             }
           }
-          observer.complete();
+          if (!observer.closed) {
+            observer.complete();
+          }
         })
-        .catch((error) => observer.error(error));
+        .catch((error) => {
+          if (!observer.closed) {
+            observer.error(error);
+          }
+        });
 
       return () => controller.abort();
     });

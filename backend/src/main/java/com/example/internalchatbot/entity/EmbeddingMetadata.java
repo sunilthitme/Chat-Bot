@@ -5,6 +5,7 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
+import jakarta.persistence.Index;
 import jakarta.persistence.Lob;
 import jakarta.persistence.PrePersist;
 import jakarta.persistence.Table;
@@ -12,7 +13,15 @@ import jakarta.persistence.Table;
 import java.time.Instant;
 
 @Entity
-@Table(name = "embeddings_metadata")
+@Table(
+        name = "embeddings_metadata",
+        indexes = {
+                @Index(name = "idx_embeddings_private_created", columnList = "private_mode, created_at"),
+                @Index(name = "idx_embeddings_session_private", columnList = "session_id, private_mode"),
+                @Index(name = "idx_embeddings_document", columnList = "document_id"),
+                @Index(name = "idx_embeddings_hash", columnList = "content_hash")
+        }
+)
 public class EmbeddingMetadata {
 
     @Id

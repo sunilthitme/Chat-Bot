@@ -5,14 +5,22 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
+import jakarta.persistence.Index;
 import jakarta.persistence.PrePersist;
+import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Table;
 
 import java.time.LocalDateTime;
 
 // Entity mapped to the chat_questions table.
 @Entity
-@Table(name = "chat_questions")
+@Table(
+        name = "chat_questions",
+        indexes = {
+                @Index(name = "idx_chat_questions_norm_question", columnList = "normalized_question"),
+                @Index(name = "idx_chat_questions_norm_keywords", columnList = "normalized_keywords")
+        }
+)
 public class ChatQuestion {
 
     @Id
@@ -27,6 +35,12 @@ public class ChatQuestion {
 
     @Column(nullable = false, length = 500)
     private String keywords;
+
+    @Column(name = "normalized_question", length = 500)
+    private String normalizedQuestion;
+
+    @Column(name = "normalized_keywords", length = 500)
+    private String normalizedKeywords;
 
     @Column(nullable = false, updatable = false)
     private LocalDateTime createdAt;
@@ -63,6 +77,14 @@ public class ChatQuestion {
         this.keywords = keywords;
     }
 
+    public String getNormalizedQuestion() {
+        return normalizedQuestion;
+    }
+
+    public String getNormalizedKeywords() {
+        return normalizedKeywords;
+    }
+
     public LocalDateTime getCreatedAt() {
         return createdAt;
     }
@@ -76,5 +98,30 @@ public class ChatQuestion {
         if (createdAt == null) {
             createdAt = LocalDateTime.now();
         }
+        refreshSearchFields();
+    }
+
+    @PreUpdate
+    void updateSearchFields() {
+        refreshSearchFields();
+    }
+
+    public boolean refreshSearchFields() {
+        String nextQuestion = normalize(question);
+        String nextKeywords = normalize(keywords);
+        boolean changed = !equals(normalizedQuestion, nextQuestion) || !equals(normalizedKeywords, nextKeywords);
+        normalizedQuestion = nextQuestion;
+        normalizedKeywords = nextKeywords;
+        return changed;
+    }
+
+    private String normalize(String value) {
+        return value == null
+                ? ""
+                : value.toLowerCase().replaceAll("[^a-z0-9 ]", " ").replaceAll("\\s+", " ").trim();
+    }
+
+    private boolean equals(String left, String right) {
+        return left == null ? right == null : left.equals(right);
     }
 }

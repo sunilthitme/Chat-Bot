@@ -13,6 +13,8 @@ public record OllamaProperties(
         String embeddingUrl,
         String embeddingModel,
         Duration embeddingTimeout,
+        Duration connectTimeout,
+        Duration requestTimeout,
         double temperature
 ) {
     public OllamaProperties {
@@ -22,6 +24,8 @@ public record OllamaProperties(
         embeddingUrl = defaultIfBlank(embeddingUrl, baseUrl + "/api/embeddings");
         embeddingModel = defaultIfBlank(embeddingModel, "nomic-embed-text");
         embeddingTimeout = embeddingTimeout == null ? Duration.ofSeconds(60) : embeddingTimeout;
+        connectTimeout = connectTimeout == null ? Duration.ofSeconds(5) : connectTimeout;
+        requestTimeout = requestTimeout == null ? Duration.ofSeconds(90) : requestTimeout;
     }
 
     private static String defaultIfBlank(String value, String fallback) {

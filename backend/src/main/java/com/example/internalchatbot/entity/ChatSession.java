@@ -3,6 +3,7 @@ package com.example.internalchatbot.entity;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
+import jakarta.persistence.Index;
 import jakarta.persistence.PrePersist;
 import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Table;
@@ -11,7 +12,12 @@ import java.time.Instant;
 import java.util.UUID;
 
 @Entity
-@Table(name = "chat_sessions")
+@Table(
+        name = "chat_sessions",
+        indexes = {
+                @Index(name = "idx_chat_sessions_user_updated", columnList = "user_key, updated_at")
+        }
+)
 public class ChatSession {
 
     @Id

@@ -10,6 +10,7 @@ import com.example.internalchatbot.repository.AppUserRepository;
 import com.example.internalchatbot.repository.ChatMessageRepository;
 import com.example.internalchatbot.repository.ChatSessionRepository;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
@@ -56,7 +57,10 @@ public class SessionService {
     }
 
     public List<ChatSessionResponse> listSessions(String userKey) {
-        return chatSessionRepository.findByUserKeyOrderByUpdatedAtDesc(normalizeUserKey(userKey))
+        return chatSessionRepository.findByUserKeyOrderByUpdatedAtDesc(
+                        normalizeUserKey(userKey),
+                        PageRequest.of(0, 50)
+                )
                 .stream()
                 .map(this::toResponse)
                 .toList();
@@ -70,7 +74,7 @@ public class SessionService {
     }
 
     public List<StoredMessageResponse> listMessages(String sessionId) {
-        return chatMessageRepository.findBySessionIdOrderByCreatedAtAsc(sessionId)
+        return chatMessageRepository.findBySessionIdOrderByCreatedAtAsc(sessionId, PageRequest.of(0, 200))
                 .stream()
                 .map(message -> new StoredMessageResponse(
                         message.getId(),

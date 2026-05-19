@@ -1,8 +1,8 @@
 import { CommonModule } from '@angular/common';
 import { HttpEventType } from '@angular/common/http';
-import { AfterViewChecked, Component, ElementRef, OnInit, ViewChild, signal } from '@angular/core';
+import { AfterViewChecked, Component, ElementRef, OnDestroy, OnInit, ViewChild, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { finalize } from 'rxjs';
+import { Subject, Subscription, debounceTime, distinctUntilChanged, finalize } from 'rxjs';
 import { ChatService, ChatSession, SourceReference } from './chat.service';
 
 type Sender = 'user' | 'bot';
@@ -21,9 +21,10 @@ interface ChatMessage {
   templateUrl: './app.html',
   styleUrl: './app.css'
 })
-export class AppComponent implements AfterViewChecked, OnInit {
+export class AppComponent implements AfterViewChecked, OnDestroy, OnInit {
   userInput = '';
   urlInput = '';
+  readonly debouncedInput = signal('');
   readonly isLoading = signal(false);
   readonly isSidebarLoading = signal(false);
   readonly uploadProgress = signal(0);
@@ -43,11 +44,26 @@ export class AppComponent implements AfterViewChecked, OnInit {
   private messagesContainer?: ElementRef<HTMLElement>;
 
   private shouldScrollMessages = true;
+  private readonly inputChanges = new Subject<string>();
+  private inputSubscription?: Subscription;
+  private activeChatSubscription?: Subscription;
+  private sessionsRequestInFlight = false;
+  private initialSessionCreationInFlight = false;
+  private lastSubmitAt = 0;
+  private lastSubmittedMessage = '';
 
   constructor(private readonly chatService: ChatService) {}
 
   ngOnInit(): void {
+    this.inputSubscription = this.inputChanges
+      .pipe(debounceTime(250), distinctUntilChanged())
+      .subscribe((value) => this.debouncedInput.set(value.trim()));
     this.loadSessions();
+  }
+
+  ngOnDestroy(): void {
+    this.inputSubscription?.unsubscribe();
+    this.activeChatSubscription?.unsubscribe();
   }
 
   ngAfterViewChecked(): void {
@@ -65,23 +81,35 @@ export class AppComponent implements AfterViewChecked, OnInit {
 
   sendMessage(): void {
     const message = this.userInput.trim();
+    const now = Date.now();
 
-    if (!message || this.isLoading()) {
+    if (!message || this.isLoading() || this.activeChatSubscription) {
       return;
     }
 
+    if (message === this.lastSubmittedMessage && now - this.lastSubmitAt < 1000) {
+      return;
+    }
+
+    this.lastSubmitAt = now;
+    this.lastSubmittedMessage = message;
     this.appendMessage({ sender: 'user', text: message });
     const botIndex = this.appendMessage({ sender: 'bot', text: '', streaming: true });
     this.userInput = '';
+    this.debouncedInput.set('');
+    this.inputChanges.next('');
     this.isLoading.set(true);
 
-    this.chatService.streamAsk({
+    this.activeChatSubscription = this.chatService.streamAsk({
       message,
       sessionId: this.currentSessionId(),
       userKey: 'local-user',
       privateMode: this.privateMode()
     })
-      .pipe(finalize(() => this.isLoading.set(false)))
+      .pipe(finalize(() => {
+        this.isLoading.set(false);
+        this.activeChatSubscription = undefined;
+      }))
       .subscribe({
         next: (event) => {
           if (event.type === 'token') {
@@ -113,9 +141,16 @@ export class AppComponent implements AfterViewChecked, OnInit {
   }
 
   newChat(): void {
+    if (this.isSidebarLoading() || this.isLoading()) {
+      return;
+    }
+
     this.isSidebarLoading.set(true);
     this.chatService.createSession(this.privateMode())
-      .pipe(finalize(() => this.isSidebarLoading.set(false)))
+      .pipe(finalize(() => {
+        this.isSidebarLoading.set(false);
+        this.initialSessionCreationInFlight = false;
+      }))
       .subscribe({
         next: (session) => {
           this.currentSessionId.set(session.id);
@@ -130,6 +165,10 @@ export class AppComponent implements AfterViewChecked, OnInit {
   }
 
   selectSession(session: ChatSession): void {
+    if (this.isLoading()) {
+      return;
+    }
+
     this.currentSessionId.set(session.id);
     this.privateMode.set(session.privateMode);
     this.chatService.listMessages(session.id).subscribe({
@@ -226,14 +265,26 @@ export class AppComponent implements AfterViewChecked, OnInit {
     this.darkMode.update((value) => !value);
   }
 
+  onUserInputChange(value: string): void {
+    this.inputChanges.next(value);
+  }
+
   private loadSessions(): void {
-    this.chatService.listSessions().subscribe({
+    if (this.sessionsRequestInFlight) {
+      return;
+    }
+
+    this.sessionsRequestInFlight = true;
+    this.chatService.listSessions()
+      .pipe(finalize(() => this.sessionsRequestInFlight = false))
+      .subscribe({
       next: (sessions) => {
         this.sessions.set(sessions);
         if (!this.currentSessionId() && sessions.length > 0) {
           this.selectSession(sessions[0]);
         }
-        if (!this.currentSessionId() && sessions.length === 0) {
+        if (!this.currentSessionId() && sessions.length === 0 && !this.initialSessionCreationInFlight) {
+          this.initialSessionCreationInFlight = true;
           this.newChat();
         }
       }

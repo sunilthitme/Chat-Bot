@@ -8,11 +8,13 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
 
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
+import java.time.Duration;
 import java.nio.charset.StandardCharsets;
 import java.util.Map;
 import java.util.function.Consumer;
@@ -43,13 +45,18 @@ public class LlmService {
             @Value("${ollama.enabled:false}") boolean enabled,
             @Value("${ollama.url}") String ollamaUrl,
             @Value("${ollama.model}") String model,
-            @Value("${ollama.temperature:0.2}") double temperature
+            @Value("${ollama.temperature:0.2}") double temperature,
+            @Value("${ollama.connect-timeout:5s}") Duration connectTimeout,
+            @Value("${ollama.request-timeout:90s}") Duration requestTimeout
     ) {
         this.enabled = enabled;
         this.ollamaUrl = ollamaUrl;
         this.model = model;
         this.temperature = temperature;
-        this.restTemplate = new RestTemplate();
+        SimpleClientHttpRequestFactory requestFactory = new SimpleClientHttpRequestFactory();
+        requestFactory.setConnectTimeout(connectTimeout);
+        requestFactory.setReadTimeout(requestTimeout);
+        this.restTemplate = new RestTemplate(requestFactory);
         this.objectMapper = new ObjectMapper();
     }
 

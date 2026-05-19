@@ -95,11 +95,12 @@
         type="text"
         name="message"
         [(ngModel)]="userInput"
+        (ngModelChange)="onUserInputChange($event)"
         placeholder="Ask about internal knowledge, uploaded docs, or trusted URLs"
         autocomplete="off"
         [disabled]="isLoading()"
       >
-      <button type="submit" [disabled]="isLoading() || !userInput.trim()">Send</button>
+      <button type="submit" [disabled]="isLoading() || !debouncedInput()">Send</button>
     </form>
   </section>
 </main>

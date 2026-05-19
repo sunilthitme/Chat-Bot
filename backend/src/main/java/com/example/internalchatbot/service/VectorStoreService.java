@@ -12,6 +12,7 @@ import dev.langchain4j.store.embedding.EmbeddingMatch;
 import dev.langchain4j.store.embedding.EmbeddingSearchRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 
 import java.util.Comparator;
@@ -113,7 +114,7 @@ public class VectorStoreService {
         }
 
         return embeddingMetadataRepository
-                .findTop500ByPrivateModeFalseOrderByCreatedAtDesc()
+                .findByPrivateModeFalseOrderByCreatedAtDesc(PageRequest.of(0, Math.max(topK, 10)))
                 .stream()
                 .map(metadata -> toSearchResult(metadata, queryVector, queryText))
                 .sorted(Comparator.comparingDouble(VectorSearchResult::score).reversed())
