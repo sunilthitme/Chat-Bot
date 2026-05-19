@@ -4,7 +4,7 @@ import com.example.internalchatbot.dto.ChatSessionResponse;
 import com.example.internalchatbot.dto.CreateSessionRequest;
 import com.example.internalchatbot.dto.PrivateModeRequest;
 import com.example.internalchatbot.dto.StoredMessageResponse;
-import com.example.internalchatbot.service.SessionService;
+import com.example.internalchatbot.ai.memory.SessionService;
 import org.springframework.web.bind.annotation.CrossOrigin;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;

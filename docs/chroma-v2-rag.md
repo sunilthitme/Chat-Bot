@@ -63,7 +63,7 @@ chroma.log-responses=false
 
 ## Example Embedding Insertion
 
-The production insertion path is `KnowledgeIngestionService -> EmbeddingService -> VectorStoreService`:
+The production insertion path is `ai.ingestion.KnowledgeIngestionService -> ai.embeddings.EmbeddingService -> ai.vectorstore.VectorStoreService`:
 
 ```java
 List<Double> vector = embeddingService.embed(chunk);
@@ -88,7 +88,7 @@ List<Double> queryVector = embeddingService.embed(userQuestion);
 List<VectorSearchResult> results = vectorStoreService.search(queryVector, 5);
 ```
 
-The search path tries Chroma V2 first. If the Chroma request fails or returns no matches, it falls back to local cosine similarity over persisted vectors.
+The chat search path runs through `ai.retrieval.RagRetrievalService`, which embeds the current question once, tries Chroma V2 first, limits retrieval to top 5 by default, and falls back to local cosine similarity over persisted vectors.
 
 ## Debugging Chroma Issues
 

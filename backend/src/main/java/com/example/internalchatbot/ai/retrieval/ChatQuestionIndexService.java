@@ -1,4 +1,4 @@
-package com.example.internalchatbot.service;
+package com.example.internalchatbot.ai.retrieval;
 
 import com.example.internalchatbot.entity.ChatQuestion;
 import com.example.internalchatbot.entity.ChatQuestionToken;

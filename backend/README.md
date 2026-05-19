@@ -1,6 +1,6 @@
 # Internal Chatbot Backend
 
-Spring Boot REST API for a DB-first enterprise chatbot with session memory, private mode, page-aware document ingestion, recursive URL crawling, Ollama generation, LangChain4j embeddings, ChromaDB vector sync, and local persisted vector metadata.
+Spring Boot REST API for a DB-first enterprise chatbot with modular AI packages, session memory, private mode, page-aware document ingestion, recursive URL crawling, Ollama generation, LangChain4j embeddings, ChromaDB vector sync, and local persisted vector metadata.
 
 ## Run
 
@@ -79,13 +79,22 @@ Open `http://localhost:8080/h2-console`.
 
 ## Production Database
 
-Replace the H2 datasource properties in `src/main/resources/application.properties` with:
+Replace the H2 datasource properties in `src/main/resources/application.properties` with MySQL:
 
 ```properties
 spring.datasource.url=jdbc:mysql://localhost:3306/internal_chatbot
 spring.datasource.username=root
 spring.datasource.password=your_password
 spring.jpa.hibernate.ddl-auto=update
+```
+
+Or PostgreSQL:
+
+```properties
+spring.datasource.url=jdbc:postgresql://localhost:5432/internal_chatbot
+spring.datasource.username=postgres
+spring.datasource.password=your_password
+spring.jpa.hibernate.ddl-auto=validate
 ```
 
 Reference SQL for the enterprise tables is in `src/main/resources/schema-enterprise.sql`. The production RAG refactor notes are in `../docs/production-rag-refactor.md`.

@@ -1,7 +1,9 @@
-package com.example.internalchatbot.service;
+package com.example.internalchatbot.ai.llm;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
@@ -10,6 +12,7 @@ import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.stereotype.Service;
+import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestTemplate;
 
 import java.io.BufferedReader;
@@ -17,27 +20,20 @@ import java.io.InputStreamReader;
 import java.time.Duration;
 import java.nio.charset.StandardCharsets;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
 
 @Service
 public class LlmService {
 
-    private static final String CONTEXT_PROMPT_TEMPLATE = """
-            You are an internal help desk chatbot.
-            Use the internal answer as the source of truth.
-            Rewrite it as a clear, helpful response to the user.
-
-            User question:
-            %s
-
-            Internal answer:
-            %s
-            """;
+    private static final Logger log = LoggerFactory.getLogger(LlmService.class);
 
     private final boolean enabled;
     private final String ollamaUrl;
     private final String model;
     private final double temperature;
+    private final int retryAttempts;
+    private final Duration retryBackoff;
     private final RestTemplate restTemplate;
     private final ObjectMapper objectMapper;
 
@@ -47,12 +43,16 @@ public class LlmService {
             @Value("${ollama.model}") String model,
             @Value("${ollama.temperature:0.2}") double temperature,
             @Value("${ollama.connect-timeout:5s}") Duration connectTimeout,
-            @Value("${ollama.request-timeout:90s}") Duration requestTimeout
+            @Value("${ollama.request-timeout:90s}") Duration requestTimeout,
+            @Value("${ollama.retry-attempts:2}") int retryAttempts,
+            @Value("${ollama.retry-backoff:500ms}") Duration retryBackoff
     ) {
         this.enabled = enabled;
         this.ollamaUrl = ollamaUrl;
         this.model = model;
         this.temperature = temperature;
+        this.retryAttempts = Math.max(1, retryAttempts);
+        this.retryBackoff = retryBackoff == null ? Duration.ofMillis(500) : retryBackoff;
         SimpleClientHttpRequestFactory requestFactory = new SimpleClientHttpRequestFactory();
         requestFactory.setConnectTimeout(connectTimeout);
         requestFactory.setReadTimeout(requestTimeout);
@@ -81,21 +81,16 @@ public class LlmService {
 
         HttpEntity<Map<String, Object>> entity = new HttpEntity<>(request, headers);
 
-        ResponseEntity<Map> response = restTemplate.postForEntity(
+        ResponseEntity<Map> response = executeWithRetry(() -> restTemplate.postForEntity(
                 ollamaUrl,
                 entity,
                 Map.class
-        );
+        ));
 
         Map responseBody = response.getBody();
         Object generatedResponse = responseBody == null ? null : responseBody.get("response");
 
         return generatedResponse == null ? "" : generatedResponse.toString();
-    }
-
-    public String generateResponseWithContext(String userQuestion, String internalAnswer) {
-        String prompt = CONTEXT_PROMPT_TEMPLATE.formatted(userQuestion, internalAnswer);
-        return generateResponse(prompt);
     }
 
     public void streamResponse(String prompt, Consumer<String> onToken) {
@@ -109,8 +104,9 @@ public class LlmService {
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON);
         HttpEntity<Map<String, Object>> entity = new HttpEntity<>(request, headers);
+        AtomicBoolean tokenEmitted = new AtomicBoolean(false);
 
-        restTemplate.execute(ollamaUrl, HttpMethod.POST, clientRequest -> {
+        executeWithRetry(() -> restTemplate.execute(ollamaUrl, HttpMethod.POST, clientRequest -> {
             clientRequest.getHeaders().putAll(headers);
             objectMapper.writeValue(clientRequest.getBody(), entity.getBody());
         }, clientResponse -> {
@@ -124,11 +120,46 @@ public class LlmService {
                     JsonNode node = objectMapper.readTree(line);
                     JsonNode response = node.get("response");
                     if (response != null && !response.asText().isBlank()) {
+                        tokenEmitted.set(true);
                         onToken.accept(response.asText());
                     }
                 }
             }
             return null;
-        });
+        }), tokenEmitted);
+    }
+
+    private <T> T executeWithRetry(LlmCall<T> call) {
+        return executeWithRetry(call, new AtomicBoolean(false));
+    }
+
+    private <T> T executeWithRetry(LlmCall<T> call, AtomicBoolean tokenEmitted) {
+        RuntimeException lastFailure = null;
+        for (int attempt = 1; attempt <= retryAttempts; attempt++) {
+            try {
+                return call.execute();
+            } catch (RuntimeException ex) {
+                lastFailure = ex;
+                if (tokenEmitted.get() || attempt >= retryAttempts) {
+                    throw ex;
+                }
+                log.warn("Ollama request failed attempt={} retryingAfterMs={}", attempt, retryBackoff.toMillis(), ex);
+                sleepBeforeRetry(attempt);
+            }
+        }
+        throw lastFailure == null ? new RestClientException("Ollama request failed") : lastFailure;
+    }
+
+    private void sleepBeforeRetry(int attempt) {
+        try {
+            Thread.sleep(retryBackoff.toMillis() * attempt);
+        } catch (InterruptedException ex) {
+            Thread.currentThread().interrupt();
+        }
+    }
+
+    @FunctionalInterface
+    private interface LlmCall<T> {
+        T execute();
     }
 }

@@ -1,4 +1,9 @@
-package com.example.internalchatbot.service;
+package com.example.internalchatbot.ai.ingestion;
+
+import com.example.internalchatbot.ai.crawling.UrlReaderService;
+import com.example.internalchatbot.ai.embeddings.EmbeddingService;
+import com.example.internalchatbot.ai.memory.SessionService;
+import com.example.internalchatbot.ai.vectorstore.VectorStoreService;
 
 import com.example.internalchatbot.dto.DocumentUploadResponse;
 import com.example.internalchatbot.dto.UrlIngestResponse;

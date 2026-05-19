@@ -1,4 +1,4 @@
-package com.example.internalchatbot.service;
+package com.example.internalchatbot.ai.crawling;
 
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;

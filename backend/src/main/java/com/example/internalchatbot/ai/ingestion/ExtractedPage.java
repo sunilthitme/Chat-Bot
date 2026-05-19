@@ -1,4 +1,4 @@
-package com.example.internalchatbot.service;
+package com.example.internalchatbot.ai.ingestion;
 
 import java.util.Map;
 

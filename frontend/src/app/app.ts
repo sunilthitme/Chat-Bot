@@ -224,7 +224,9 @@ export class AppComponent implements AfterViewChecked, OnDestroy, OnInit {
               this.currentSessionId.set(response.sessionId);
               this.appendMessage({
                 sender: 'bot',
-                text: `${response.message} Chunks stored: ${response.chunksStored}.`
+                text: response.privateMode
+                  ? 'I read the document for this private chat without saving it.'
+                  : `I read "${response.sourceName}" and it is ready for questions.`
               });
               this.loadSessions();
             }
@@ -250,7 +252,9 @@ export class AppComponent implements AfterViewChecked, OnDestroy, OnInit {
             this.currentSessionId.set(response.sessionId);
             this.appendMessage({
               sender: 'bot',
-              text: `URL ingested. Chunks stored: ${response.chunksStored}.\n\n${response.summary}`
+              text: response.privateMode
+                ? 'I read that URL for this private chat without saving it.'
+                : 'I read that URL and it is ready for questions.'
             });
             this.loadSessions();
           },

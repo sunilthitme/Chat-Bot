@@ -1,4 +1,6 @@
-package com.example.internalchatbot.service;
+package com.example.internalchatbot.ai.crawling;
+
+import com.example.internalchatbot.ai.ingestion.TextNormalizer;
 
 import de.l3s.boilerpipe.extractors.ArticleExtractor;
 import net.dankito.readability4j.Article;

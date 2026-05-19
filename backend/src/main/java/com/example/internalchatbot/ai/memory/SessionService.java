@@ -1,4 +1,4 @@
-package com.example.internalchatbot.service;
+package com.example.internalchatbot.ai.memory;
 
 import com.example.internalchatbot.dto.ChatSessionResponse;
 import com.example.internalchatbot.dto.CreateSessionRequest;

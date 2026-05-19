@@ -1,4 +1,6 @@
-package com.example.internalchatbot.service;
+package com.example.internalchatbot.ai.crawling;
+
+import com.example.internalchatbot.ai.ingestion.TextNormalizer;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;

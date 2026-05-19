@@ -1,6 +1,6 @@
 # Internal Chatbot
 
-Angular + Spring Boot internal chatbot with DB-first answers, Ollama, multi-session memory, private mode, production RAG, document ingestion, URL crawling, and persisted enterprise knowledge.
+Angular + Spring Boot internal chatbot with DB-first answers, Ollama, multi-session memory, private mode, modular production RAG, document ingestion, URL crawling, and persisted enterprise knowledge.
 
 See [docs/enterprise-ai-architecture.md](docs/enterprise-ai-architecture.md) for the module-by-module architecture, API flow, schema, and production recommendations. See [docs/production-rag-refactor.md](docs/production-rag-refactor.md) for the latest refactor notes. See [docs/chroma-v2-rag.md](docs/chroma-v2-rag.md) for the ChromaDB API V2 and LangChain4j setup.
 
@@ -37,7 +37,7 @@ chroma.tenant-name=default
 chroma.database-name=default
 ```
 
-Chat requests check the internal DB first, then retrieved vector knowledge, then Ollama. Private-mode requests skip message persistence, embedding persistence, and future knowledge storage.
+Chat requests run through `ai.rag.AiOrchestratorService`: internal DB lookup first, top-5 vector retrieval second, prompt construction third, then one logical Ollama response. Private-mode requests skip message persistence, embedding persistence, and future knowledge storage.
 
 ## Run Frontend
 

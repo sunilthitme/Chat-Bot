@@ -2,7 +2,7 @@ package com.example.internalchatbot.controller;
 
 import com.example.internalchatbot.dto.ChatRequest;
 import com.example.internalchatbot.dto.ChatResponse;
-import com.example.internalchatbot.service.LlmService;
+import com.example.internalchatbot.ai.llm.LlmService;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.CrossOrigin;

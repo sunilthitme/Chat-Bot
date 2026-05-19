@@ -1,4 +1,9 @@
-package com.example.internalchatbot.service;
+package com.example.internalchatbot.ai.crawling;
+
+import com.example.internalchatbot.ai.ingestion.ContentHash;
+import com.example.internalchatbot.ai.ingestion.ExtractedDocument;
+import com.example.internalchatbot.ai.ingestion.ExtractedPage;
+import com.example.internalchatbot.ai.ingestion.TextNormalizer;
 
 import org.jsoup.Connection;
 import org.jsoup.Jsoup;

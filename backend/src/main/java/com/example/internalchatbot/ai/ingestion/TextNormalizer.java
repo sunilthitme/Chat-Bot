@@ -1,4 +1,4 @@
-package com.example.internalchatbot.service;
+package com.example.internalchatbot.ai.ingestion;
 
 import org.springframework.stereotype.Component;
 

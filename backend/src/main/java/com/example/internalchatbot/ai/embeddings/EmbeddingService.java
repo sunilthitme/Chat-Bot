@@ -1,4 +1,6 @@
-package com.example.internalchatbot.service;
+package com.example.internalchatbot.ai.embeddings;
+
+import com.example.internalchatbot.ai.ingestion.ContentHash;
 
 import com.example.internalchatbot.config.OllamaProperties;
 import dev.langchain4j.data.embedding.Embedding;

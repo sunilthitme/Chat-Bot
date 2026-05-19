@@ -1,4 +1,4 @@
-package com.example.internalchatbot.service;
+package com.example.internalchatbot.ai.vectorstore;
 
 import com.example.internalchatbot.config.ChromaProperties;
 import org.slf4j.Logger;

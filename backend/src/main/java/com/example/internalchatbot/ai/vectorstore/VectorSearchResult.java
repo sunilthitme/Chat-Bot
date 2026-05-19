@@ -1,4 +1,4 @@
-package com.example.internalchatbot.service;
+package com.example.internalchatbot.ai.vectorstore;
 
 public record VectorSearchResult(
         Long embeddingId,

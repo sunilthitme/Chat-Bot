@@ -3,7 +3,7 @@ package com.example.internalchatbot.controller;
 import com.example.internalchatbot.dto.DocumentUploadResponse;
 import com.example.internalchatbot.dto.UrlIngestRequest;
 import com.example.internalchatbot.dto.UrlIngestResponse;
-import com.example.internalchatbot.service.KnowledgeIngestionService;
+import com.example.internalchatbot.ai.ingestion.KnowledgeIngestionService;
 import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.CrossOrigin;
 import org.springframework.web.bind.annotation.PostMapping;

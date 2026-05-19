@@ -25,6 +25,7 @@ The `/api/incidents/analyze` route no longer exists.
 org.apache.tika:tika-core:3.3.0
 org.apache.tika:tika-parsers-standard-package:3.3.0
 org.apache.commons:commons-csv:1.14.1
+org.postgresql:postgresql
 ```
 
 Existing RAG dependencies remain:
@@ -50,16 +51,36 @@ controller/
   DocumentController.java
   SessionController.java
   LlmController.java
-service/
-  ChatService.java
-  DocumentExtractionService.java
-  UrlReaderService.java
-  TextChunker.java
-  EmbeddingService.java
-  VectorStoreService.java
-  ChromaEmbeddingStoreProvider.java
-  ChromaHealthClient.java
-  SessionService.java
+ai/
+  llm/
+    LlmService.java
+  rag/
+    AiOrchestratorService.java
+  memory/
+    SessionService.java
+    ConversationMemoryService.java
+  retrieval/
+    ChatQuestionIndexService.java
+    RagRetrievalService.java
+  prompts/
+    PromptBuilder.java
+  streaming/
+    ChatStreamService.java
+  ingestion/
+    DocumentExtractionService.java
+    KnowledgeIngestionService.java
+    TextChunker.java
+  crawling/
+    UrlReaderService.java
+    UrlValidationService.java
+    ReadabilityExtractionService.java
+    TrafilaturaExtractionService.java
+  embeddings/
+    EmbeddingService.java
+  vectorstore/
+    VectorStoreService.java
+    ChromaEmbeddingStoreProvider.java
+    ChromaHealthClient.java
 entity/
   UploadedDocument.java
   EmbeddingMetadata.java
@@ -84,6 +105,8 @@ User question
 -> metadata-private prompt construction
 -> streamed Ollama response
 ```
+
+`AiOrchestratorService` owns the chat flow and delegates specialist work to memory, retrieval, prompt, LLM, and streaming modules. The chat path does not reread URLs, regenerate document embeddings, crawl websites, or rescan full documents.
 
 ## Document Ingestion
 
@@ -150,6 +173,7 @@ url.trafilatura.timeout=20s
 - Streaming tokens plus final response metadata
 - No self-indexing of ordinary assistant replies, which prevents retrieval pollution
 - One generation call per user question
+- Ollama retry handling is limited to transient failures before streamed tokens are emitted
 
 ## Frontend Improvements
 
@@ -158,7 +182,7 @@ url.trafilatura.timeout=20s
 - Markdown and code block rendering
 - Upload progress
 - Sources section removed from the UI
-- Internal retrieval metadata, vector IDs, embedding IDs, URLs, and session UUIDs are not exposed through the chat UI
+- Internal retrieval metadata, vector IDs, embedding IDs, chunk counts, and session UUIDs are not exposed through the chat UI
 - CSV upload support
 - Responsive dark mode
 

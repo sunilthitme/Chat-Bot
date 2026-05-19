@@ -1,4 +1,7 @@
-package com.example.internalchatbot.service;
+package com.example.internalchatbot.ai.vectorstore;
+
+import com.example.internalchatbot.ai.ingestion.ContentHash;
+import com.example.internalchatbot.ai.ingestion.DocumentChunk;
 
 import com.example.internalchatbot.entity.EmbeddingMetadata;
 import com.example.internalchatbot.repository.EmbeddingMetadataRepository;

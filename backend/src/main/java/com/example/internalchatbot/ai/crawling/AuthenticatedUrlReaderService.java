@@ -1,4 +1,4 @@
-package com.example.internalchatbot.service;
+package com.example.internalchatbot.ai.crawling;
 
 import org.openqa.selenium.By;
 import org.openqa.selenium.WebDriver;
