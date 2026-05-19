@@ -1,25 +1,20 @@
 package com.example.internalchatbot.dto;
 
-import java.util.ArrayList;
-import java.util.List;
-
 // Response DTO returned to the Angular frontend.
 public class ChatResponse {
 
     private String sessionId;
     private String reply;
     private boolean privateMode;
-    private List<SourceReference> sources = new ArrayList<>();
 
     public ChatResponse(String reply) {
         this.reply = reply;
     }
 
-    public ChatResponse(String sessionId, String reply, boolean privateMode, List<SourceReference> sources) {
+    public ChatResponse(String sessionId, String reply, boolean privateMode) {
         this.sessionId = sessionId;
         this.reply = reply;
         this.privateMode = privateMode;
-        this.sources = sources == null ? new ArrayList<>() : sources;
     }
 
     public String getSessionId() {
@@ -46,11 +41,4 @@ public class ChatResponse {
         this.privateMode = privateMode;
     }
 
-    public List<SourceReference> getSources() {
-        return sources;
-    }
-
-    public void setSources(List<SourceReference> sources) {
-        this.sources = sources;
-    }
 }

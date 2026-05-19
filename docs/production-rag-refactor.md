@@ -38,6 +38,8 @@ URL readability extraction also uses:
 
 ```xml
 net.dankito.readability4j:readability4j:1.0.8
+de.l3s.boilerpipe:boilerpipe:1.1.0
+xerces:xercesImpl:2.12.2
 ```
 
 ## Updated Architecture
@@ -79,7 +81,7 @@ User question
 -> ChromaDB V2 retrieval
 -> bounded local hybrid fallback retrieval
 -> relevance filtering and context ranking
--> source-aware prompt construction
+-> metadata-private prompt construction
 -> streamed Ollama response
 ```
 
@@ -115,7 +117,8 @@ The URL reader now:
 - blocks private/local hosts by default to reduce SSRF risk
 - follows redirects with browser-like request headers
 - retries transient fetch failures
-- extracts main article content with Readability4J and falls back to structured Jsoup extraction
+- extracts main article content with Readability4J
+- falls back through Boilerpipe, Apache Tika HTML extraction, and structured Jsoup cleanup
 - optionally falls back to the Trafilatura CLI when `url.trafilatura.enabled=true`
 - reads sitemap URLs when present
 - crawls same-host links up to configured depth/page limits
@@ -143,7 +146,7 @@ url.trafilatura.timeout=20s
 - Session-scoped memory only
 - Follow-up context is compressed into the retrieval query without making an extra LLM call
 - Context window compression through `rag.max-context-chars`
-- Source citations in prompt context
+- Retrieved context stays private by default; source details are included only when the user explicitly asks for sources
 - Streaming tokens plus final response metadata
 - No self-indexing of ordinary assistant replies, which prevents retrieval pollution
 - One generation call per user question
@@ -154,8 +157,8 @@ url.trafilatura.timeout=20s
 - Streaming chat consumption
 - Markdown and code block rendering
 - Upload progress
-- Source references with page/section metadata
-- Human-readable source labels only; vector IDs, embedding IDs, and session UUIDs are stripped from displayed sources
+- Sources section removed from the UI
+- Internal retrieval metadata, vector IDs, embedding IDs, URLs, and session UUIDs are not exposed through the chat UI
 - CSV upload support
 - Responsive dark mode
 

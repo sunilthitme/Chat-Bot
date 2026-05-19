@@ -3,14 +3,13 @@ import { HttpErrorResponse, HttpEventType } from '@angular/common/http';
 import { AfterViewChecked, Component, ElementRef, OnDestroy, OnInit, ViewChild, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { Subject, Subscription, debounceTime, distinctUntilChanged, finalize } from 'rxjs';
-import { ChatService, ChatSession, SourceReference } from './chat.service';
+import { ChatService, ChatSession } from './chat.service';
 
 type Sender = 'user' | 'bot';
 
 interface ChatMessage {
   sender: Sender;
   text: string;
-  sources?: SourceReference[];
   streaming?: boolean;
 }
 
@@ -124,7 +123,6 @@ export class AppComponent implements AfterViewChecked, OnDestroy, OnInit {
             this.updateMessage(botIndex, () => ({
               sender: 'bot',
               text: event.response.reply,
-              sources: event.response.sources,
               streaming: false
             }));
             this.loadSessions();

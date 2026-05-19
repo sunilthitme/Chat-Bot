@@ -9,21 +9,10 @@ export interface ChatRequest {
   privateMode?: boolean;
 }
 
-export interface SourceReference {
-  sourceName: string;
-  sourceType: string;
-  sourceUrl?: string;
-  pageNumber?: number;
-  sectionTitle?: string;
-  score: number;
-  preview: string;
-}
-
 export interface ChatResponse {
   sessionId: string;
   reply: string;
   privateMode: boolean;
-  sources: SourceReference[];
 }
 
 export interface ChatSession {

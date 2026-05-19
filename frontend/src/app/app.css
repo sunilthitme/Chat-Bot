@@ -271,22 +271,6 @@
   color: #ffffff;
 }
 
-.sources {
-  display: grid;
-  gap: 4px;
-  margin-top: 10px;
-  padding-top: 10px;
-  border-top: 1px solid #e2e8f0;
-  color: #64748b;
-  font-size: 12px;
-}
-
-.sources a {
-  color: inherit;
-  text-decoration: underline;
-  text-underline-offset: 2px;
-}
-
 .loading {
   display: inline-flex;
   gap: 5px;
@@ -353,11 +337,6 @@ textarea:disabled {
   background: #111827;
   border-color: #334155;
   color: #e2e8f0;
-}
-
-.app-shell.dark .sources {
-  border-top-color: #334155;
-  color: #cbd5e1;
 }
 
 @keyframes pulse {

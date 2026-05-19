@@ -2,7 +2,6 @@ package com.example.internalchatbot.service;
 
 import com.example.internalchatbot.dto.ChatRequest;
 import com.example.internalchatbot.dto.ChatResponse;
-import com.example.internalchatbot.dto.SourceReference;
 import com.example.internalchatbot.entity.ChatQuestion;
 import com.example.internalchatbot.entity.ChatSession;
 import org.slf4j.Logger;
@@ -90,8 +89,7 @@ public class ChatService {
         return new ChatResponse(
                 prepared.sessionId(),
                 reply,
-                prepared.privateMode(),
-                toSourceReferences(prepared.retrievedKnowledge())
+                prepared.privateMode()
         );
     }
 
@@ -156,7 +154,8 @@ public class ChatService {
         List<VectorSearchResult> retrievedKnowledge = retrieveKnowledge(retrievalQuestion, privateMode);
         long ragMs = elapsedMillis(ragStartedAt);
 
-        String prompt = buildPrompt(message, retrievalQuestion, memory, storedAnswer, retrievedKnowledge, privateMode);
+        boolean explicitSourceRequest = wantsSourceDetails(message);
+        String prompt = buildPrompt(message, retrievalQuestion, memory, storedAnswer, retrievedKnowledge, privateMode, explicitSourceRequest);
         log.info(
                 "chat request prepared requestId={} sessionId={} privateMode={} dbHit={} sources={} sessionMs={} memoryMs={} dbMs={} ragMs={} prepMs={}",
                 requestId,
@@ -178,7 +177,8 @@ public class ChatService {
                 privateMode,
                 storedAnswer,
                 retrievedKnowledge,
-                prompt
+                prompt,
+                explicitSourceRequest
         );
     }
 
@@ -269,9 +269,10 @@ public class ChatService {
             String memory,
             String storedAnswer,
             List<VectorSearchResult> retrievedKnowledge,
-            boolean privateMode
+            boolean privateMode,
+            boolean explicitSourceRequest
     ) {
-        String knowledge = formatKnowledge(retrievedKnowledge);
+        String knowledge = formatKnowledge(retrievedKnowledge, explicitSourceRequest);
 
         return """
                 You are a production-grade enterprise AI assistant with a conversational style similar to ChatGPT.
@@ -281,9 +282,11 @@ public class ChatService {
                 3. Use retrieved document and website knowledge only when relevant.
                 4. Answer naturally; do not copy chunks verbatim unless quoting a short exact phrase is useful.
                 5. If the context is insufficient, say what is missing and give the safest next step.
-                6. When using retrieved sources, cite them inline using the source name and page when available.
+                6. Use retrieved context silently unless the user explicitly asks for sources, citations, links, or references.
                 7. Never leak memory across sessions.
                 8. If private mode is enabled, do not mention storing or learning from this conversation.
+                9. Never expose session IDs, vector IDs, embedding IDs, database IDs, or internal metadata.
+                10. If sources were not requested, do not include URLs or source lists in the answer.
 
                 Private mode: %s
 
@@ -341,23 +344,8 @@ public class ChatService {
         return new ChatResponse(
                 prepared.sessionId(),
                 reply,
-                prepared.privateMode(),
-                toSourceReferences(prepared.retrievedKnowledge())
+                prepared.privateMode()
         );
-    }
-
-    private List<SourceReference> toSourceReferences(List<VectorSearchResult> results) {
-        return results.stream()
-                .map(result -> new SourceReference(
-                        publicSourceName(result),
-                        result.sourceType(),
-                        publicSourceUrl(result.sourceUrl()),
-                        result.pageNumber(),
-                        publicText(result.sectionTitle(), ""),
-                        result.score(),
-                        publicPreview(result.content())
-                ))
-                .toList();
     }
 
     private String publicSourceName(VectorSearchResult result) {
@@ -379,11 +367,6 @@ public class ChatService {
         return value;
     }
 
-    private String publicPreview(String content) {
-        String value = publicText(content, "");
-        return value.length() > 180 ? value.substring(0, 180) + "..." : value;
-    }
-
     private String publicText(String value, String fallback) {
         if (value == null || value.isBlank()) {
             return fallback;
@@ -403,7 +386,17 @@ public class ChatService {
                 || value.matches("(?i).*\\b(embedding|vector|session)[_-]?[0-9a-f-]{6,}.*");
     }
 
-    private String formatKnowledge(List<VectorSearchResult> retrievedKnowledge) {
+    private boolean wantsSourceDetails(String message) {
+        String normalized = normalize(message);
+        return normalized.contains("source")
+                || normalized.contains("citation")
+                || normalized.contains("cite")
+                || normalized.contains("reference")
+                || normalized.contains("link")
+                || normalized.contains("url");
+    }
+
+    private String formatKnowledge(List<VectorSearchResult> retrievedKnowledge, boolean includeSourceDetails) {
         StringBuilder builder = new StringBuilder();
         int sourceNumber = 1;
         for (VectorSearchResult result : retrievedKnowledge) {
@@ -411,10 +404,13 @@ public class ChatService {
                 break;
             }
             builder.append("Source ").append(sourceNumber++).append('\n');
-            builder.append("Name: ").append(result.sourceName()).append('\n');
+            builder.append("Name: ").append(includeSourceDetails ? publicSourceName(result) : "Retrieved knowledge").append('\n');
             builder.append("Type: ").append(result.sourceType()).append('\n');
-            if (result.sourceUrl() != null && !result.sourceUrl().isBlank()) {
-                builder.append("URL: ").append(result.sourceUrl()).append('\n');
+            if (includeSourceDetails) {
+                String publicUrl = publicSourceUrl(result.sourceUrl());
+                if (publicUrl != null && !publicUrl.isBlank()) {
+                    builder.append("URL: ").append(publicUrl).append('\n');
+                }
             }
             if (result.pageNumber() != null) {
                 builder.append("Page: ").append(result.pageNumber()).append('\n');
@@ -460,7 +456,8 @@ public class ChatService {
             boolean privateMode,
             String storedAnswer,
             List<VectorSearchResult> retrievedKnowledge,
-            String prompt
+            String prompt,
+            boolean explicitSourceRequest
     ) {
     }
 }

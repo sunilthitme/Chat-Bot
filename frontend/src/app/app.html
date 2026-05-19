@@ -71,18 +71,6 @@
       >
         <div class="message-bubble">
           <div class="message-content" [innerHTML]="renderMarkdown(message.text)"></div>
-          <div *ngIf="message.sources?.length" class="sources">
-            <strong>Sources</strong>
-            <span *ngFor="let source of message.sources">
-              <ng-container *ngIf="source.sourceUrl; else sourceNameOnly">
-                <a [href]="source.sourceUrl" target="_blank" rel="noopener noreferrer">{{ source.sourceName }}</a>
-              </ng-container>
-              <ng-template #sourceNameOnly>{{ source.sourceName }}</ng-template>
-              <ng-container *ngIf="source.pageNumber"> page {{ source.pageNumber }}</ng-container>
-              <ng-container *ngIf="source.sectionTitle"> - {{ source.sectionTitle }}</ng-container>
-              - {{ source.score | number:'1.2-2' }}
-            </span>
-          </div>
         </div>
       </div>
 

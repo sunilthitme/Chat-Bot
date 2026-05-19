@@ -68,8 +68,7 @@ Response:
 {
   "sessionId": "generated-session-id",
   "reply": "Steps to create RITM: 1. Open the service portal...",
-  "privateMode": false,
-  "sources": []
+  "privateMode": false
 }
 ```
 

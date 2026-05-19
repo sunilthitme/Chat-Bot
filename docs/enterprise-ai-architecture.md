@@ -31,7 +31,6 @@ backend/src/main/java/com/example/internalchatbot/
     CreateSessionRequest.java
     DocumentUploadResponse.java
     PrivateModeRequest.java
-    SourceReference.java
     StoredMessageResponse.java
     UrlIngestRequest.java
     UrlIngestResponse.java
@@ -71,7 +70,7 @@ backend/src/main/java/com/example/internalchatbot/
 
 `DocumentController` uploads PDF, DOCX, TXT, and LOG files, then delegates extraction and indexing to `KnowledgeIngestionService`.
 
-`UrlReaderService` validates URL schemes and domains before reading with Jsoup. `AuthenticatedUrlReaderService` uses Selenium only when backend properties enable login-required capture. Passwords remain backend-only in `application.properties`.
+`UrlReaderService` validates public HTTP/HTTPS URLs before reading with Jsoup. Readability4J, Boilerpipe, Apache Tika, structured Jsoup cleanup, and optional Trafilatura fallback extract readable content. `AuthenticatedUrlReaderService` uses Selenium only when backend properties enable login-required capture. Passwords remain backend-only in `application.properties`.
 
 `EmbeddingService` uses LangChain4j `OllamaEmbeddingModel` with `nomic-embed-text`. `VectorStoreService` saves local vector metadata and syncs chunks to ChromaDB API V2 when `chroma.enabled=true`. Chroma initialization is lazy and health-checked so Spring Boot startup does not fail when Chroma is unavailable.
 
@@ -122,7 +121,7 @@ When `privateMode=true`:
 - Frontend never receives login credentials.
 - URL ingestion accepts public HTTP and HTTPS URLs without a domain allow-list.
 - Private/local hosts are blocked by default through `url.block-private-hosts=true`.
-- Readability4J, Jsoup cleanup, and optional Trafilatura CLI fallback extract human-readable content.
+- Readability4J, Boilerpipe, Apache Tika, Jsoup cleanup, and optional Trafilatura CLI fallback extract human-readable content.
 - Upload size is capped by `security.max-upload-bytes`.
 - Supported file extensions are limited to PDF, DOCX, TXT, and LOG.
 - Selenium login runs only when `secure-url.login-enabled=true`.
@@ -138,7 +137,7 @@ The Angular app now has a ChatGPT-style layout with:
 - File upload action.
 - URL ingestion form.
 - Typing/loading animation.
-- Source display for RAG results.
+- No visible sources panel; internal retrieval metadata stays backend-only unless a user explicitly asks the assistant for references.
 
 ## Configuration
 
