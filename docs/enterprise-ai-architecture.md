@@ -122,6 +122,7 @@ When `privateMode=true`:
 - Frontend never receives login credentials.
 - URL ingestion accepts public HTTP and HTTPS URLs without a domain allow-list.
 - Private/local hosts are blocked by default through `url.block-private-hosts=true`.
+- Readability4J, Jsoup cleanup, and optional Trafilatura CLI fallback extract human-readable content.
 - Upload size is capped by `security.max-upload-bytes`.
 - Supported file extensions are limited to PDF, DOCX, TXT, and LOG.
 - Selenium login runs only when `secure-url.login-enabled=true`.
@@ -159,6 +160,7 @@ chroma.retry-delay=10s
 url.block-private-hosts=true
 url.max-pages=20
 url.retry-attempts=3
+url.trafilatura.enabled=false
 secure-url.login-enabled=false
 ```
 

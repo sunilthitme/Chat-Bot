@@ -85,6 +85,13 @@
             <version>1.22.2</version>
         </dependency>
 
+        <!-- Firefox Reader View style extraction for cluttered blogs, docs, and knowledge-base pages. -->
+        <dependency>
+            <groupId>net.dankito.readability4j</groupId>
+            <artifactId>readability4j</artifactId>
+            <version>1.0.8</version>
+        </dependency>
+
         <!-- JSON parsing for Ollama streaming lines and persisted vector values. -->
         <dependency>
             <groupId>com.fasterxml.jackson.core</groupId>

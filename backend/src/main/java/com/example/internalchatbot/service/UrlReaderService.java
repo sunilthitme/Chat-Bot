@@ -31,6 +31,8 @@ public class UrlReaderService {
 
     private final UrlValidationService urlValidationService;
     private final AuthenticatedUrlReaderService authenticatedUrlReaderService;
+    private final ReadabilityExtractionService readabilityExtractionService;
+    private final TrafilaturaExtractionService trafilaturaExtractionService;
     private final TextNormalizer textNormalizer;
     private final int maxPages;
     private final int maxDepth;
@@ -42,6 +44,8 @@ public class UrlReaderService {
     public UrlReaderService(
             UrlValidationService urlValidationService,
             AuthenticatedUrlReaderService authenticatedUrlReaderService,
+            ReadabilityExtractionService readabilityExtractionService,
+            TrafilaturaExtractionService trafilaturaExtractionService,
             TextNormalizer textNormalizer,
             @Value("${url.max-pages:20}") int maxPages,
             @Value("${url.max-depth:2}") int maxDepth,
@@ -52,6 +56,8 @@ public class UrlReaderService {
     ) {
         this.urlValidationService = urlValidationService;
         this.authenticatedUrlReaderService = authenticatedUrlReaderService;
+        this.readabilityExtractionService = readabilityExtractionService;
+        this.trafilaturaExtractionService = trafilaturaExtractionService;
         this.textNormalizer = textNormalizer;
         this.maxPages = Math.max(1, maxPages);
         this.maxDepth = Math.max(0, maxDepth);
@@ -107,7 +113,7 @@ public class UrlReaderService {
             try {
                 FetchedPage fetched = fetchPage(uri);
                 Document document = fetched.document();
-                String text = readableText(document);
+                String text = readabilityExtractionService.extract(fetched.finalUri(), fetched.body(), document);
                 if (text.isBlank()) {
                     failures.add(uri + " returned no readable text");
                     continue;
@@ -143,6 +149,10 @@ public class UrlReaderService {
                     }
                 }
             } catch (IOException | IllegalArgumentException ex) {
+                if (tryAddTrafilaturaPage(pages, contentHashes, uri)) {
+                    totalChars += pages.getLast().text().length();
+                    continue;
+                }
                 String message = uri + " failed: " + ex.getMessage();
                 failures.add(message);
                 log.debug("URL crawl page skipped {}", message);
@@ -154,6 +164,22 @@ public class UrlReaderService {
             throw new IllegalArgumentException("No readable public content found at the supplied URL. " + detail);
         }
         return toDocument(rootUri, pages);
+    }
+
+    private boolean tryAddTrafilaturaPage(List<ExtractedPage> pages, Set<String> contentHashes, URI uri) {
+        return trafilaturaExtractionService.extract(uri)
+                .filter(text -> !text.isBlank())
+                .filter(text -> contentHashes.add(ContentHash.sha256(textNormalizer.compact(text))))
+                .map(text -> {
+                    pages.add(new ExtractedPage(
+                            pages.size() + 1,
+                            uri.toString(),
+                            text,
+                            Map.of("url", uri.toString(), "parser", "trafilatura-cli-fallback")
+                    ));
+                    return true;
+                })
+                .orElse(false);
     }
 
     private FetchedPage fetchPage(URI uri) throws IOException {
@@ -170,8 +196,9 @@ public class UrlReaderService {
                 }
 
                 URI finalUri = urlValidationService.validate(response.url().toString());
-                Document document = response.parse();
-                return new FetchedPage(finalUri, document, statusCode, defaultIfBlank(response.contentType(), "unknown"));
+                String body = response.body();
+                Document document = Jsoup.parse(body, finalUri.toString());
+                return new FetchedPage(finalUri, document, body, statusCode, defaultIfBlank(response.contentType(), "unknown"));
             } catch (IOException ex) {
                 lastException = ex;
                 if (attempt < retryAttempts) {
@@ -190,30 +217,14 @@ public class UrlReaderService {
                 .followRedirects(true)
                 .header("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,text/plain;q=0.8,*/*;q=0.5")
                 .header("Accept-Language", "en-US,en;q=0.9")
+                .header("DNT", "1")
+                .header("Sec-Fetch-Dest", "document")
+                .header("Sec-Fetch-Mode", "navigate")
+                .header("Sec-Fetch-Site", "none")
+                .header("Upgrade-Insecure-Requests", "1")
                 .header("Cache-Control", "no-cache")
                 .header("Pragma", "no-cache")
                 .referrer(uri.resolve("/").toString());
-    }
-
-    private String readableText(Document document) {
-        Document clone = document.clone();
-        clone.select("script,style,noscript,svg,canvas,iframe,header,footer,nav,aside,form,button,"
-                + "[aria-hidden=true],.cookie,.cookies,.breadcrumb,.breadcrumbs,.pagination,.advertisement,.ads").remove();
-        Element content = clone.selectFirst("main,article,[role=main],.content,#content,.documentation,.docs-content");
-        Element root = content == null ? clone.body() : content;
-        if (root == null) {
-            return "";
-        }
-
-        LinkedHashSet<String> lines = new LinkedHashSet<>();
-        addLine(lines, clone.title());
-        for (Element element : root.select("h1,h2,h3,h4,p,li,pre,code,blockquote,td,th")) {
-            addLine(lines, element.text());
-        }
-        if (lines.size() <= 1) {
-            addLine(lines, root.text());
-        }
-        return textNormalizer.normalize(String.join("\n", lines));
     }
 
     private List<URI> sitemapUrls(URI rootUri) {
@@ -320,13 +331,6 @@ public class UrlReaderService {
                 || path.endsWith(".woff") || path.endsWith(".woff2") || path.endsWith(".ttf");
     }
 
-    private void addLine(Set<String> lines, String value) {
-        String normalized = textNormalizer.normalize(value);
-        if (normalized.length() >= 3) {
-            lines.add(normalized);
-        }
-    }
-
     private void sleepBeforeRetry(URI uri, int attempt, IOException ex) {
         long sleepMillis = retryBackoff.toMillis() * attempt;
         log.debug("URL fetch retry url={} attempt={} backoffMs={} reason={}", uri, attempt, sleepMillis, ex.getMessage());
@@ -345,7 +349,7 @@ public class UrlReaderService {
         return (System.nanoTime() - startedAt) / 1_000_000;
     }
 
-    private record FetchedPage(URI finalUri, Document document, int statusCode, String contentType) {
+    private record FetchedPage(URI finalUri, Document document, String body, int statusCode, String contentType) {
     }
 
     private record CrawlTarget(URI uri, int depth) {

@@ -34,6 +34,12 @@ dev.langchain4j:langchain4j-ollama:1.14.1
 dev.langchain4j:langchain4j-chroma:1.14.1-beta24
 ```
 
+URL readability extraction also uses:
+
+```xml
+net.dankito.readability4j:readability4j:1.0.8
+```
+
 ## Updated Architecture
 
 ```text
@@ -109,6 +115,8 @@ The URL reader now:
 - blocks private/local hosts by default to reduce SSRF risk
 - follows redirects with browser-like request headers
 - retries transient fetch failures
+- extracts main article content with Readability4J and falls back to structured Jsoup extraction
+- optionally falls back to the Trafilatura CLI when `url.trafilatura.enabled=true`
 - reads sitemap URLs when present
 - crawls same-host links up to configured depth/page limits
 - removes boilerplate HTML
@@ -125,6 +133,9 @@ url.timeout=15s
 url.retry-attempts=3
 url.retry-backoff=500ms
 url.max-extracted-chars=180000
+url.trafilatura.enabled=false
+url.trafilatura.command=trafilatura
+url.trafilatura.timeout=20s
 ```
 
 ## Conversation Improvements
@@ -144,6 +155,7 @@ url.max-extracted-chars=180000
 - Markdown and code block rendering
 - Upload progress
 - Source references with page/section metadata
+- Human-readable source labels only; vector IDs, embedding IDs, and session UUIDs are stripped from displayed sources
 - CSV upload support
 - Responsive dark mode
 

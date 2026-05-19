@@ -53,6 +53,7 @@ POST http://localhost:8080/api/knowledge/urls
 
 Supported upload types: PDF, DOCX, TXT, LOG, CSV, plus Apache Tika fallback for other readable office/text formats.
 URL ingestion accepts public HTTP/HTTPS sites, follows redirects, reads sitemaps, crawls same-host links, and blocks private/local hosts by default with `url.block-private-hosts=true`.
+HTML extraction uses Readability4J first, structured Jsoup cleanup second, and an optional Trafilatura CLI fallback when `url.trafilatura.enabled=true`.
 
 ## Direct LLM API
 

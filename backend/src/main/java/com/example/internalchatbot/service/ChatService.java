@@ -349,15 +349,58 @@ public class ChatService {
     private List<SourceReference> toSourceReferences(List<VectorSearchResult> results) {
         return results.stream()
                 .map(result -> new SourceReference(
-                        result.sourceName(),
+                        publicSourceName(result),
                         result.sourceType(),
-                        result.sourceUrl(),
+                        publicSourceUrl(result.sourceUrl()),
                         result.pageNumber(),
-                        result.sectionTitle(),
+                        publicText(result.sectionTitle(), ""),
                         result.score(),
-                        result.content().length() > 180 ? result.content().substring(0, 180) + "..." : result.content()
+                        publicPreview(result.content())
                 ))
                 .toList();
+    }
+
+    private String publicSourceName(VectorSearchResult result) {
+        if ("url".equalsIgnoreCase(result.sourceType()) && result.sourceUrl() != null && !result.sourceUrl().isBlank()) {
+            return result.sourceUrl();
+        }
+        String value = publicText(result.sourceName(), "Knowledge source");
+        if (looksInternal(value)) {
+            return "Knowledge source";
+        }
+        return value;
+    }
+
+    private String publicSourceUrl(String sourceUrl) {
+        String value = publicText(sourceUrl, null);
+        if (value == null || looksInternal(value)) {
+            return null;
+        }
+        return value;
+    }
+
+    private String publicPreview(String content) {
+        String value = publicText(content, "");
+        return value.length() > 180 ? value.substring(0, 180) + "..." : value;
+    }
+
+    private String publicText(String value, String fallback) {
+        if (value == null || value.isBlank()) {
+            return fallback;
+        }
+        return value
+                .replaceAll("(?i)embedding-[0-9a-f-]+", "")
+                .replaceAll("(?i)session[_ -]?[0-9a-f-]{8,}", "")
+                .replaceAll("[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}", "")
+                .replaceAll("\\s+", " ")
+                .trim();
+    }
+
+    private boolean looksInternal(String value) {
+        return value == null
+                || value.isBlank()
+                || value.matches(".*[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}.*")
+                || value.matches("(?i).*\\b(embedding|vector|session)[_-]?[0-9a-f-]{6,}.*");
     }
 
     private String formatKnowledge(List<VectorSearchResult> retrievedKnowledge) {
