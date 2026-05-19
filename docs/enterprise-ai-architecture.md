@@ -120,8 +120,8 @@ When `privateMode=true`:
 ## Security Guardrails
 
 - Frontend never receives login credentials.
-- URL ingestion accepts only HTTP and HTTPS.
-- URL hosts must match `security.allowed-url-domains`.
+- URL ingestion accepts public HTTP and HTTPS URLs without a domain allow-list.
+- Private/local hosts are blocked by default through `url.block-private-hosts=true`.
 - Upload size is capped by `security.max-upload-bytes`.
 - Supported file extensions are limited to PDF, DOCX, TXT, and LOG.
 - Selenium login runs only when `secure-url.login-enabled=true`.
@@ -156,7 +156,9 @@ chroma.timeout=10s
 chroma.health-check-timeout=2s
 chroma.health-check-retries=3
 chroma.retry-delay=10s
-security.allowed-url-domains=localhost,127.0.0.1,example.com,servicenow.com
+url.block-private-hosts=true
+url.max-pages=20
+url.retry-attempts=3
 secure-url.login-enabled=false
 ```
 

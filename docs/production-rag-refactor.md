@@ -60,6 +60,7 @@ entity/
 repository/
   UploadedDocumentRepository.java
   EmbeddingMetadataRepository.java
+  ChatQuestionTokenRepository.java
 ```
 
 ## RAG Flow
@@ -67,10 +68,10 @@ repository/
 ```text
 User question
 -> session memory lookup
--> follow-up query rewriting
+-> bounded internal DB lookup
 -> Ollama embedding generation
 -> ChromaDB V2 retrieval
--> local hybrid fallback retrieval
+-> bounded local hybrid fallback retrieval
 -> relevance filtering and context ranking
 -> source-aware prompt construction
 -> streamed Ollama response
@@ -104,7 +105,10 @@ OCR is represented as a safe placeholder: scanned PDFs fail with a clear OCR-req
 
 The URL reader now:
 
-- validates allowed domains
+- accepts public HTTP and HTTPS URLs without a domain allow-list
+- blocks private/local hosts by default to reduce SSRF risk
+- follows redirects with browser-like request headers
+- retries transient fetch failures
 - reads sitemap URLs when present
 - crawls same-host links up to configured depth/page limits
 - removes boilerplate HTML
@@ -114,20 +118,24 @@ The URL reader now:
 Configuration:
 
 ```properties
-url.max-pages=8
+url.block-private-hosts=true
+url.max-pages=20
 url.max-depth=2
 url.timeout=15s
-url.max-extracted-chars=120000
+url.retry-attempts=3
+url.retry-backoff=500ms
+url.max-extracted-chars=180000
 ```
 
 ## Conversation Improvements
 
 - Session-scoped memory only
-- Follow-up query rewriting before retrieval
+- Follow-up context is compressed into the retrieval query without making an extra LLM call
 - Context window compression through `rag.max-context-chars`
 - Source citations in prompt context
 - Streaming tokens plus final response metadata
 - No self-indexing of ordinary assistant replies, which prevents retrieval pollution
+- One generation call per user question
 
 ## Frontend Improvements
 
@@ -163,5 +171,5 @@ curl http://localhost:8000/api/v2/heartbeat
 - Ingestion keeps document metadata separate from generated answers.
 - Private mode skips persistence and embedding storage.
 - Retrieval has vector and keyword fallback paths.
-- Large content is summarized from bounded page samples.
+- URL ingestion does not call the LLM, keeping indexing separate from answer generation.
 - The UI no longer exposes backend credentials or private ingestion internals.

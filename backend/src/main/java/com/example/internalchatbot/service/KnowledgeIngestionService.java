@@ -10,7 +10,6 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
-import org.springframework.web.client.RestClientException;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.util.List;
@@ -28,7 +27,6 @@ public class KnowledgeIngestionService {
     private final EmbeddingService embeddingService;
     private final VectorStoreService vectorStoreService;
     private final SessionService sessionService;
-    private final LlmService llmService;
     private final ObjectMapper objectMapper;
 
     public KnowledgeIngestionService(
@@ -38,8 +36,7 @@ public class KnowledgeIngestionService {
             TextChunker textChunker,
             EmbeddingService embeddingService,
             VectorStoreService vectorStoreService,
-            SessionService sessionService,
-            LlmService llmService
+            SessionService sessionService
     ) {
         this.documentExtractionService = documentExtractionService;
         this.urlReaderService = urlReaderService;
@@ -48,7 +45,6 @@ public class KnowledgeIngestionService {
         this.embeddingService = embeddingService;
         this.vectorStoreService = vectorStoreService;
         this.sessionService = sessionService;
-        this.llmService = llmService;
         this.objectMapper = new ObjectMapper();
     }
 
@@ -58,10 +54,12 @@ public class KnowledgeIngestionService {
             String userKey,
             boolean privateMode
     ) {
+        long startedAt = System.nanoTime();
         ExtractedDocument extractedDocument = documentExtractionService.extract(file);
         ChatSession session = sessionService.getOrCreateSession(sessionId, userKey, privateMode, extractedDocument.sourceName());
 
         if (privateMode) {
+            log.info("private document parsed source={} pages={} totalMs={}", extractedDocument.sourceName(), extractedDocument.pageCount(), elapsedMillis(startedAt));
             return new DocumentUploadResponse(
                     null,
                     session.getId(),
@@ -77,6 +75,14 @@ public class KnowledgeIngestionService {
         document.setChunkCount(chunksStored);
         document.setIngestionStatus(chunksStored > 0 ? "COMPLETED" : "NO_EMBEDDINGS");
         uploadedDocumentRepository.save(document);
+        log.info(
+                "document ingestion completed documentId={} source={} pages={} chunks={} totalMs={}",
+                document.getId(),
+                extractedDocument.sourceName(),
+                extractedDocument.pageCount(),
+                chunksStored,
+                elapsedMillis(startedAt)
+        );
 
         return new DocumentUploadResponse(
                 document.getId(),
@@ -95,11 +101,13 @@ public class KnowledgeIngestionService {
             boolean privateMode,
             boolean loginRequired
     ) {
+        long startedAt = System.nanoTime();
         ExtractedDocument extractedDocument = urlReaderService.read(url, loginRequired);
         ChatSession session = sessionService.getOrCreateSession(sessionId, userKey, privateMode, url);
         String summary = summarizeExtractedDocument(extractedDocument);
 
         if (privateMode) {
+            log.info("private URL parsed url={} pages={} totalMs={}", url, extractedDocument.pageCount(), elapsedMillis(startedAt));
             return new UrlIngestResponse(null, session.getId(), url, 0, true, summary);
         }
 
@@ -108,6 +116,14 @@ public class KnowledgeIngestionService {
         document.setChunkCount(chunksStored);
         document.setIngestionStatus(chunksStored > 0 ? "COMPLETED" : "NO_EMBEDDINGS");
         uploadedDocumentRepository.save(document);
+        log.info(
+                "URL ingestion completed documentId={} url={} pages={} chunks={} totalMs={}",
+                document.getId(),
+                url,
+                extractedDocument.pageCount(),
+                chunksStored,
+                elapsedMillis(startedAt)
+        );
 
         return new UrlIngestResponse(document.getId(), session.getId(), url, chunksStored, false, summary);
     }
@@ -192,42 +208,8 @@ public class KnowledgeIngestionService {
     }
 
     private String summarizeExtractedDocument(ExtractedDocument document) {
-        if (!llmService.isEnabled()) {
-            return "Content ingested from " + document.pageCount() + " page(s).";
-        }
-        String content = buildSummaryContent(document);
-        String prompt = """
-                Summarize this source for enterprise retrieval.
-                Preserve important facts, entities, procedures, warnings, and decisions.
-                Keep the summary concise and useful for future question answering.
-
-                Source: %s
-                Pages: %d
-
-                Content:
-                %s
-                """.formatted(document.sourceName(), document.pageCount(), content);
-        try {
-            return llmService.generateResponse(prompt, 0.1);
-        } catch (RestClientException ex) {
-            return "Content ingested. Summary unavailable because Ollama is not reachable.";
-        }
-    }
-
-    private String buildSummaryContent(ExtractedDocument document) {
-        StringBuilder builder = new StringBuilder();
-        for (ExtractedPage page : document.pages()) {
-            if (builder.length() > 12_000) {
-                break;
-            }
-            builder.append("Page ").append(page.pageNumber()).append(": ");
-            if (page.sectionTitle() != null && !page.sectionTitle().isBlank()) {
-                builder.append(page.sectionTitle()).append('\n');
-            }
-            String text = page.text();
-            builder.append(text, 0, Math.min(2_000, text.length())).append("\n\n");
-        }
-        return builder.toString();
+        return "Content ingested from " + document.pageCount() + " page(s). "
+                + "Indexed text length: " + document.combinedText().length() + " characters.";
     }
 
     private String toJson(Map<String, String> metadata) {
@@ -236,5 +218,9 @@ public class KnowledgeIngestionService {
         } catch (JsonProcessingException ex) {
             throw new IllegalStateException("Unable to serialize document metadata", ex);
         }
+    }
+
+    private long elapsedMillis(long startedAt) {
+        return (System.nanoTime() - startedAt) / 1_000_000;
     }
 }

@@ -1,5 +1,5 @@
 import { CommonModule } from '@angular/common';
-import { HttpEventType } from '@angular/common/http';
+import { HttpErrorResponse, HttpEventType } from '@angular/common/http';
 import { AfterViewChecked, Component, ElementRef, OnDestroy, OnInit, ViewChild, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { Subject, Subscription, debounceTime, distinctUntilChanged, finalize } from 'rxjs';
@@ -56,7 +56,7 @@ export class AppComponent implements AfterViewChecked, OnDestroy, OnInit {
 
   ngOnInit(): void {
     this.inputSubscription = this.inputChanges
-      .pipe(debounceTime(250), distinctUntilChanged())
+      .pipe(debounceTime(500), distinctUntilChanged())
       .subscribe((value) => this.debouncedInput.set(value.trim()));
     this.loadSessions();
   }
@@ -231,7 +231,7 @@ export class AppComponent implements AfterViewChecked, OnDestroy, OnInit {
               this.loadSessions();
             }
           },
-          error: () => this.appendMessage({ sender: 'bot', text: 'Document upload failed.' })
+          error: (error) => this.appendMessage({ sender: 'bot', text: this.errorMessage(error, 'Document upload failed.') })
         });
     });
   }
@@ -256,7 +256,7 @@ export class AppComponent implements AfterViewChecked, OnDestroy, OnInit {
             });
             this.loadSessions();
           },
-          error: () => this.appendMessage({ sender: 'bot', text: 'URL could not be read. Check the allow-list and URL access.' })
+          error: (error) => this.appendMessage({ sender: 'bot', text: this.errorMessage(error, 'URL could not be read.') })
         });
     });
   }
@@ -344,5 +344,12 @@ export class AppComponent implements AfterViewChecked, OnDestroy, OnInit {
       .replace(/>/g, '&gt;')
       .replace(/"/g, '&quot;')
       .replace(/'/g, '&#039;');
+  }
+
+  private errorMessage(error: unknown, fallback: string): string {
+    if (error instanceof HttpErrorResponse && error.error?.error) {
+      return `${fallback} ${error.error.error}`;
+    }
+    return fallback;
   }
 }

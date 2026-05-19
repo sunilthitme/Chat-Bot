@@ -13,6 +13,8 @@ import org.springframework.web.bind.annotation.RequestPart;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.util.concurrent.Callable;
+
 @RestController
 @RequestMapping("/api/knowledge")
 @CrossOrigin(origins = "${app.cors.allowed-origin}")
@@ -25,18 +27,18 @@ public class DocumentController {
     }
 
     @PostMapping("/documents")
-    public DocumentUploadResponse upload(
+    public Callable<DocumentUploadResponse> upload(
             @RequestPart("file") MultipartFile file,
             @RequestParam(required = false) String sessionId,
             @RequestParam(defaultValue = "local-user") String userKey,
             @RequestParam(defaultValue = "false") boolean privateMode
     ) {
-        return knowledgeIngestionService.ingestFile(file, sessionId, userKey, privateMode);
+        return () -> knowledgeIngestionService.ingestFile(file, sessionId, userKey, privateMode);
     }
 
     @PostMapping("/urls")
-    public UrlIngestResponse ingestUrl(@Valid @org.springframework.web.bind.annotation.RequestBody UrlIngestRequest request) {
-        return knowledgeIngestionService.ingestUrl(
+    public Callable<UrlIngestResponse> ingestUrl(@Valid @org.springframework.web.bind.annotation.RequestBody UrlIngestRequest request) {
+        return () -> knowledgeIngestionService.ingestUrl(
                 request.url(),
                 request.sessionId(),
                 request.userKey(),
