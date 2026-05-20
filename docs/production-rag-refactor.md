@@ -112,6 +112,20 @@ User question
 
 URL ingestion is separated behind `POST /api/ingest/url`. It queues background indexing and returns immediately. The ingestion worker fetches content once, removes boilerplate, chunks text, generates embeddings once, and stores vectors for later chat retrieval.
 
+Document upload and URL indexing now share the same ingestion state machine:
+
+```text
+UPLOAD/URL
+-> EXTRACTING
+-> CHUNKING
+-> EMBEDDING
+-> STORING
+-> SUMMARIZING
+-> COMPLETED / NO_EMBEDDINGS / FAILED
+```
+
+The frontend polls `GET /api/ingest/status?sessionId={sessionId}` and blocks chat input until the current session reaches a terminal state. Successful indexing returns a concise AI-generated summary before the user can ask questions.
+
 ## Document Ingestion
 
 Supported inputs:
@@ -152,7 +166,7 @@ The URL reader now:
 - removes boilerplate HTML
 - deduplicates content by hash
 - extracts title and URL metadata per page
-- persists indexing status as `QUEUED`, `INDEXING`, `COMPLETED`, `NO_EMBEDDINGS`, or `FAILED`
+- persists indexing status as `QUEUED`, `EXTRACTING`, `CHUNKING`, `EMBEDDING`, `STORING`, `SUMMARIZING`, `COMPLETED`, `NO_EMBEDDINGS`, or `FAILED`
 
 Configuration:
 
@@ -186,6 +200,8 @@ url.trafilatura.timeout=20s
 - Streaming chat consumption
 - Markdown and code block rendering
 - Upload progress
+- Indexing progress for extraction, chunking, embeddings, vector storage, and summary generation
+- Chat input is disabled until indexing completes and the summary is visible
 - Sources section removed from the UI
 - Internal retrieval metadata, vector IDs, embedding IDs, chunk counts, and session UUIDs are not exposed through the chat UI
 - CSV upload support
@@ -213,7 +229,7 @@ curl http://localhost:8000/api/v2/heartbeat
 ## Best Practices Applied
 
 - ChromaDB client is lazy and health-checked.
-- Ingestion keeps document metadata separate from generated answers.
+- Ingestion keeps document metadata separate from generated answers and exposes only user-facing status plus summary.
 - Private mode skips persistence and embedding storage.
 - Retrieval has vector and keyword fallback paths.
 - URL ingestion does not call the LLM, keeping indexing separate from answer generation.

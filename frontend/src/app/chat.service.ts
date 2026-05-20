@@ -41,6 +41,15 @@ export interface UrlIngestResponse {
   message: string;
 }
 
+export interface IngestionStatusResponse {
+  active: boolean;
+  status: string;
+  stage: string;
+  message: string;
+  summary: string;
+  privateMode: boolean;
+}
+
 export type StreamingChatEvent =
   | { type: 'token'; token: string }
   | { type: 'done'; response: ChatResponse };
@@ -151,6 +160,12 @@ export class ChatService {
       userKey: 'local-user',
       privateMode,
       loginRequired: false
+    });
+  }
+
+  ingestionStatus(sessionId: string): Observable<IngestionStatusResponse> {
+    return this.http.get<IngestionStatusResponse>(`${this.baseUrl}/ingest/status`, {
+      params: { sessionId }
     });
   }
 

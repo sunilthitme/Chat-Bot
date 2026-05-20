@@ -1,13 +1,16 @@
 package com.example.internalchatbot.controller;
 
 import com.example.internalchatbot.ai.ingestion.KnowledgeIngestionService;
+import com.example.internalchatbot.dto.IngestionStatusResponse;
 import com.example.internalchatbot.dto.UrlIngestRequest;
 import com.example.internalchatbot.dto.UrlIngestResponse;
 import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.CrossOrigin;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
@@ -30,5 +33,10 @@ public class IngestionController {
                 request.privateMode(),
                 request.loginRequired()
         );
+    }
+
+    @GetMapping("/status")
+    public IngestionStatusResponse ingestionStatus(@RequestParam String sessionId) {
+        return knowledgeIngestionService.statusForSession(sessionId);
     }
 }

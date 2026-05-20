@@ -17,6 +17,7 @@ import java.time.Instant;
         name = "uploaded_documents",
         indexes = {
                 @Index(name = "idx_uploaded_source_url_type_private", columnList = "source_url, source_type, private_mode"),
+                @Index(name = "idx_uploaded_session_status_private", columnList = "session_id, ingestion_status, private_mode"),
                 @Index(name = "idx_uploaded_status", columnList = "ingestion_status")
         }
 )
@@ -63,6 +64,9 @@ public class UploadedDocument {
 
     @Lob
     private String metadataJson;
+
+    @Lob
+    private String summary;
 
     @Column(nullable = false)
     private Instant createdAt;
@@ -183,6 +187,14 @@ public class UploadedDocument {
 
     public void setMetadataJson(String metadataJson) {
         this.metadataJson = metadataJson;
+    }
+
+    public String getSummary() {
+        return summary;
+    }
+
+    public void setSummary(String summary) {
+        this.summary = summary;
     }
 
     public Instant getCreatedAt() {

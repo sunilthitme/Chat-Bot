@@ -1,6 +1,6 @@
 <main class="app-shell" [class.dark]="darkMode()">
   <aside class="sidebar" aria-label="Chat sessions">
-    <button class="new-chat" type="button" (click)="newChat()" [disabled]="isSidebarLoading()">
+    <button class="new-chat" type="button" (click)="newChat()" [disabled]="isSidebarLoading() || indexingActive()">
       + New chat
     </button>
 
@@ -10,6 +10,7 @@
         type="button"
         class="session-item"
         [class.active]="session.id === currentSessionId()"
+        [disabled]="indexingActive()"
         (click)="selectSession(session)"
       >
         <span>{{ session.title }}</span>
@@ -42,9 +43,9 @@
     </header>
 
     <div class="tool-strip">
-      <label class="upload-button">
+      <label class="upload-button" [class.disabled]="isLoading() || indexingActive()">
         Upload
-        <input type="file" accept=".pdf,.docx,.txt,.log,.csv" (change)="uploadDocument($event)" hidden>
+        <input type="file" accept=".pdf,.docx,.txt,.log,.csv" (change)="uploadDocument($event)" [disabled]="isLoading() || indexingActive()" hidden>
       </label>
       <div *ngIf="uploadProgress() > 0" class="upload-progress">
         <span [style.width.%]="uploadProgress()"></span>
@@ -56,11 +57,19 @@
           name="url"
           [(ngModel)]="urlInput"
           placeholder="Index public webpage"
-          [disabled]="isLoading()"
+          [disabled]="isLoading() || indexingActive()"
         >
-        <button type="submit" [disabled]="isLoading() || !urlInput.trim()">Index</button>
+        <button type="submit" [disabled]="isLoading() || indexingActive() || !urlInput.trim()">Index</button>
       </form>
     </div>
+
+    <section *ngIf="indexingActive()" class="indexing-panel" aria-live="polite">
+      <span class="indexing-dot"></span>
+      <div>
+        <strong>{{ indexingStage() }}</strong>
+        <p>{{ indexingMessage() }}</p>
+      </div>
+    </section>
 
     <div class="messages" #messagesContainer>
       <div
@@ -89,9 +98,9 @@
         (ngModelChange)="onUserInputChange($event)"
         placeholder="Ask about internal knowledge, uploaded docs, or indexed webpages"
         autocomplete="off"
-        [disabled]="isLoading()"
+        [disabled]="isLoading() || indexingActive()"
       >
-      <button type="submit" [disabled]="isLoading() || !debouncedInput()">Send</button>
+      <button type="submit" [disabled]="isLoading() || indexingActive() || !debouncedInput()">Send</button>
     </form>
   </section>
 </main>

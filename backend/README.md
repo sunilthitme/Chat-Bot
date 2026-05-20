@@ -51,6 +51,7 @@ Document upload and URL ingestion:
 ```http
 POST http://localhost:8080/api/knowledge/documents
 POST http://localhost:8080/api/ingest/url
+GET  http://localhost:8080/api/ingest/status?sessionId={sessionId}
 ```
 
 Supported upload types: PDF, DOCX, TXT, LOG, CSV, plus Apache Tika fallback for other readable office/text formats.
@@ -58,7 +59,7 @@ URL ingestion accepts public HTTP/HTTPS sites, follows redirects, reads sitemaps
 HTML extraction uses Readability4J first, then Boilerpipe, Apache Tika, structured Jsoup cleanup, and an optional Trafilatura CLI fallback when `url.trafilatura.enabled=true`.
 Chat responses do not expose retrieved source metadata to the frontend.
 
-`POST /api/ingest/url` returns immediately with a queued status. The background ingestion executor fetches and cleans the page, chunks it with `rag.chunk-size=500`, embeds once, and stores vectors. Chat then uses similarity search only.
+Document upload and `POST /api/ingest/url` return immediately with a queued status. The background ingestion executor extracts content, cleans it, chunks it with `rag.chunk-size=800` and `rag.chunk-overlap=150`, embeds once, stores vectors, then generates a concise summary. The frontend polls `/api/ingest/status` and blocks questions until indexing reaches `COMPLETED`, `NO_EMBEDDINGS`, or `FAILED`. Chat then uses similarity search only.
 
 ## ChromaDB
 

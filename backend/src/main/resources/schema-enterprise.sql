@@ -56,6 +56,7 @@ create table uploaded_documents (
     private_mode boolean not null,
     extracted_text clob not null,
     metadata_json clob,
+    summary clob,
     created_at timestamp not null
 );
 
@@ -90,4 +91,5 @@ create index idx_embeddings_session_private on embeddings_metadata(session_id, p
 create index idx_embeddings_document on embeddings_metadata(document_id);
 create index idx_embeddings_hash on embeddings_metadata(content_hash);
 create index idx_uploaded_source_url_type_private on uploaded_documents(source_url, source_type, private_mode);
+create index idx_uploaded_session_status_private on uploaded_documents(session_id, ingestion_status, private_mode);
 create index idx_uploaded_status on uploaded_documents(ingestion_status);

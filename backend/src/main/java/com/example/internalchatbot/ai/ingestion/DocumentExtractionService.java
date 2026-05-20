@@ -49,21 +49,26 @@ public class DocumentExtractionService {
 
     public ExtractedDocument extract(MultipartFile file) {
         validate(file);
-        String filename = sanitizeFilename(file.getOriginalFilename());
-        String extension = extension(filename);
 
         try {
-            byte[] bytes = file.getBytes();
-            return switch (extension) {
-                case "pdf" -> extractPdf(filename, file.getContentType(), bytes);
-                case "docx" -> extractDocx(filename, file.getContentType(), bytes);
-                case "csv" -> extractCsv(filename, file.getContentType(), bytes);
-                case "txt", "log" -> extractText(filename, file.getContentType(), bytes, extension);
-                default -> extractWithTika(filename, file.getContentType(), bytes, "tika-fallback");
-            };
+            return extract(file.getOriginalFilename(), file.getContentType(), file.getBytes());
         } catch (IOException ex) {
             throw new IllegalArgumentException("Unable to read uploaded document", ex);
         }
+    }
+
+    public ExtractedDocument extract(String originalFilename, String contentType, byte[] bytes) {
+        validateBytes(bytes);
+        String filename = sanitizeFilename(originalFilename);
+        String extension = extension(filename);
+
+        return switch (extension) {
+            case "pdf" -> extractPdf(filename, contentType, bytes);
+            case "docx" -> extractDocx(filename, contentType, bytes);
+            case "csv" -> extractCsv(filename, contentType, bytes);
+            case "txt", "log" -> extractText(filename, contentType, bytes, extension);
+            default -> extractWithTika(filename, contentType, bytes, "tika-fallback");
+        };
     }
 
     private ExtractedDocument extractPdf(String filename, String contentType, byte[] bytes) {
@@ -274,6 +279,15 @@ public class DocumentExtractionService {
             throw new IllegalArgumentException("File is required");
         }
         if (file.getSize() > maxUploadBytes) {
+            throw new IllegalArgumentException("File exceeds upload limit");
+        }
+    }
+
+    private void validateBytes(byte[] bytes) {
+        if (bytes == null || bytes.length == 0) {
+            throw new IllegalArgumentException("File is required");
+        }
+        if (bytes.length > maxUploadBytes) {
             throw new IllegalArgumentException("File exceeds upload limit");
         }
     }

@@ -43,9 +43,10 @@ URL ingestion is separate from chat:
 
 ```http
 POST /api/ingest/url
+GET /api/ingest/status?sessionId={sessionId}
 ```
 
-The URL is fetched, cleaned, chunked, embedded, and stored in the background. Chat never rereads webpages or sends raw HTML to Ollama.
+The URL is fetched, cleaned, chunked, embedded, stored, and summarized in the background. Document uploads use the same indexing lifecycle. Chat is gated while the current session is indexing, so users see a concise summary before asking questions. Chat never rereads webpages, reparses files, regenerates embeddings, or sends raw HTML to Ollama.
 
 ## Run ChromaDB
 

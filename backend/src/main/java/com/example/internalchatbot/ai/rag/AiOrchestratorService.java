@@ -1,5 +1,6 @@
 package com.example.internalchatbot.ai.rag;
 
+import com.example.internalchatbot.ai.ingestion.KnowledgeIngestionService;
 import com.example.internalchatbot.ai.llm.LlmService;
 import com.example.internalchatbot.ai.memory.ConversationMemoryService;
 import com.example.internalchatbot.ai.memory.SessionService;
@@ -30,11 +31,13 @@ public class AiOrchestratorService {
 
     private static final Logger log = LoggerFactory.getLogger(AiOrchestratorService.class);
     private static final String NOT_FOUND_REPLY = "Information not found in the indexed knowledge.";
+    private static final String INDEXING_REPLY = "Document is still being indexed. Please wait.";
 
     private final ChatQuestionIndexService chatQuestionIndexService;
     private final LlmService llmService;
     private final SessionService sessionService;
     private final ConversationMemoryService conversationMemoryService;
+    private final KnowledgeIngestionService knowledgeIngestionService;
     private final RagRetrievalService ragRetrievalService;
     private final PromptBuilder promptBuilder;
     private final int internalSearchLimit;
@@ -45,6 +48,7 @@ public class AiOrchestratorService {
             LlmService llmService,
             SessionService sessionService,
             ConversationMemoryService conversationMemoryService,
+            KnowledgeIngestionService knowledgeIngestionService,
             RagRetrievalService ragRetrievalService,
             PromptBuilder promptBuilder,
             @Value("${chat.internal-search-limit:5}") int internalSearchLimit,
@@ -54,6 +58,7 @@ public class AiOrchestratorService {
         this.llmService = llmService;
         this.sessionService = sessionService;
         this.conversationMemoryService = conversationMemoryService;
+        this.knowledgeIngestionService = knowledgeIngestionService;
         this.ragRetrievalService = ragRetrievalService;
         this.promptBuilder = promptBuilder;
         this.internalSearchLimit = Math.max(1, Math.min(internalSearchLimit, 10));
@@ -75,6 +80,9 @@ public class AiOrchestratorService {
     public ChatResponse ask(ChatRequest request) {
         PreparedChat prepared = prepare(request);
         long llmStartedAt = System.nanoTime();
+        if (prepared.indexingActive()) {
+            return indexingResponse(prepared, llmStartedAt, false, null);
+        }
         if (!prepared.hasGrounding()) {
             return noGroundingResponse(prepared, llmStartedAt, false, null);
         }
@@ -99,6 +107,9 @@ public class AiOrchestratorService {
     public ChatResponse stream(ChatRequest request, Consumer<String> onToken) {
         PreparedChat prepared = prepare(request);
         long llmStartedAt = System.nanoTime();
+        if (prepared.indexingActive()) {
+            return indexingResponse(prepared, llmStartedAt, true, onToken);
+        }
         if (!prepared.hasGrounding()) {
             return noGroundingResponse(prepared, llmStartedAt, true, onToken);
         }
@@ -143,6 +154,25 @@ public class AiOrchestratorService {
                 message
         );
         boolean privateMode = session.isPrivateMode() || request.isPrivateMode();
+        if (!privateMode && knowledgeIngestionService.hasActiveIngestion(session.getId())) {
+            log.info(
+                    "chat request blocked while ingestion is active requestId={} sessionMs={} totalMs={}",
+                    requestId,
+                    elapsedMillis(sessionStartedAt),
+                    elapsedMillis(startedAt)
+            );
+            return new PreparedChat(
+                    requestId,
+                    startedAt,
+                    session.getId(),
+                    false,
+                    null,
+                    List.of(),
+                    "",
+                    false,
+                    true
+            );
+        }
         sessionService.saveMessage(session.getId(), "user", message, privateMode);
         long sessionMs = elapsedMillis(sessionStartedAt);
 
@@ -189,7 +219,8 @@ public class AiOrchestratorService {
                 storedAnswer,
                 retrievedKnowledge,
                 prompt,
-                hasGrounding(storedAnswer, retrievedKnowledge)
+                hasGrounding(storedAnswer, retrievedKnowledge),
+                false
         );
     }
 
@@ -300,6 +331,24 @@ public class AiOrchestratorService {
         return response(prepared, NOT_FOUND_REPLY, llmStartedAt, stream);
     }
 
+    private ChatResponse indexingResponse(
+            PreparedChat prepared,
+            long llmStartedAt,
+            boolean stream,
+            Consumer<String> onToken
+    ) {
+        if (onToken != null) {
+            onToken.accept(INDEXING_REPLY);
+        }
+        log.info(
+                "chat request blocked requestId={} stream={} reason=ingestion-active totalMs={}",
+                prepared.requestId(),
+                stream,
+                elapsedMillis(prepared.startedAt())
+        );
+        return response(prepared, INDEXING_REPLY, llmStartedAt, stream);
+    }
+
     private boolean hasGrounding(String storedAnswer, List<VectorSearchResult> retrievedKnowledge) {
         return storedAnswer != null && !storedAnswer.isBlank() || !retrievedKnowledge.isEmpty();
     }
@@ -330,7 +379,8 @@ public class AiOrchestratorService {
             String storedAnswer,
             List<VectorSearchResult> retrievedKnowledge,
             String prompt,
-            boolean hasGrounding
+            boolean hasGrounding,
+            boolean indexingActive
     ) {
     }
 }

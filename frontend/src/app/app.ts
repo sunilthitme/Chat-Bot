@@ -2,8 +2,8 @@ import { CommonModule } from '@angular/common';
 import { HttpErrorResponse, HttpEventType } from '@angular/common/http';
 import { AfterViewChecked, Component, ElementRef, OnDestroy, OnInit, ViewChild, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { Subject, Subscription, debounceTime, distinctUntilChanged, finalize } from 'rxjs';
-import { ChatService, ChatSession } from './chat.service';
+import { Subject, Subscription, debounceTime, distinctUntilChanged, finalize, switchMap, timer } from 'rxjs';
+import { ChatService, ChatSession, IngestionStatusResponse } from './chat.service';
 
 type Sender = 'user' | 'bot';
 
@@ -27,6 +27,9 @@ export class AppComponent implements AfterViewChecked, OnDestroy, OnInit {
   readonly isLoading = signal(false);
   readonly isSidebarLoading = signal(false);
   readonly uploadProgress = signal(0);
+  readonly indexingActive = signal(false);
+  readonly indexingStage = signal('');
+  readonly indexingMessage = signal('');
   readonly privateMode = signal(false);
   readonly darkMode = signal(false);
   readonly sessions = signal<ChatSession[]>([]);
@@ -46,6 +49,7 @@ export class AppComponent implements AfterViewChecked, OnDestroy, OnInit {
   private readonly inputChanges = new Subject<string>();
   private inputSubscription?: Subscription;
   private activeChatSubscription?: Subscription;
+  private indexingStatusSubscription?: Subscription;
   private sessionsRequestInFlight = false;
   private initialSessionCreationInFlight = false;
   private lastSubmitAt = 0;
@@ -63,6 +67,7 @@ export class AppComponent implements AfterViewChecked, OnDestroy, OnInit {
   ngOnDestroy(): void {
     this.inputSubscription?.unsubscribe();
     this.activeChatSubscription?.unsubscribe();
+    this.indexingStatusSubscription?.unsubscribe();
   }
 
   ngAfterViewChecked(): void {
@@ -82,7 +87,7 @@ export class AppComponent implements AfterViewChecked, OnDestroy, OnInit {
     const message = this.userInput.trim();
     const now = Date.now();
 
-    if (!message || this.isLoading() || this.activeChatSubscription) {
+    if (!message || this.isLoading() || this.indexingActive() || this.activeChatSubscription) {
       return;
     }
 
@@ -138,10 +143,11 @@ export class AppComponent implements AfterViewChecked, OnDestroy, OnInit {
   }
 
   newChat(): void {
-    if (this.isSidebarLoading() || this.isLoading()) {
+    if (this.isSidebarLoading() || this.isLoading() || this.indexingActive()) {
       return;
     }
 
+    this.clearIndexingState();
     this.isSidebarLoading.set(true);
     this.chatService.createSession(this.privateMode())
       .pipe(finalize(() => {
@@ -162,12 +168,13 @@ export class AppComponent implements AfterViewChecked, OnDestroy, OnInit {
   }
 
   selectSession(session: ChatSession): void {
-    if (this.isLoading()) {
+    if (this.isLoading() || this.indexingActive()) {
       return;
     }
 
     this.currentSessionId.set(session.id);
     this.privateMode.set(session.privateMode);
+    this.clearIndexingState();
     this.chatService.listMessages(session.id).subscribe({
       next: (messages) => {
         const mappedMessages = messages.map<ChatMessage>((message) => ({
@@ -179,11 +186,15 @@ export class AppComponent implements AfterViewChecked, OnDestroy, OnInit {
           text: 'This chat has no saved messages yet.'
         }]);
         this.shouldScrollMessages = true;
+        this.refreshIndexingStatus(session.id);
       }
     });
   }
 
   togglePrivateMode(): void {
+    if (this.indexingActive()) {
+      return;
+    }
     const nextValue = !this.privateMode();
     this.privateMode.set(nextValue);
     const sessionId = this.currentSessionId();
@@ -201,7 +212,7 @@ export class AppComponent implements AfterViewChecked, OnDestroy, OnInit {
     const input = event.target as HTMLInputElement;
     const file = input.files?.[0];
     input.value = '';
-    if (!file || this.isLoading()) {
+    if (!file || this.isLoading() || this.indexingActive()) {
       return;
     }
 
@@ -224,6 +235,7 @@ export class AppComponent implements AfterViewChecked, OnDestroy, OnInit {
                 sender: 'bot',
                 text: response.message
               });
+              this.startIndexingWatch(sessionId, response.status);
               this.loadSessions();
             }
           },
@@ -234,7 +246,7 @@ export class AppComponent implements AfterViewChecked, OnDestroy, OnInit {
 
   ingestUrl(): void {
     const url = this.urlInput.trim();
-    if (!url || this.isLoading()) {
+    if (!url || this.isLoading() || this.indexingActive()) {
       return;
     }
 
@@ -249,6 +261,7 @@ export class AppComponent implements AfterViewChecked, OnDestroy, OnInit {
               sender: 'bot',
               text: response.message
             });
+            this.startIndexingWatch(sessionId, response.status);
             this.loadSessions();
           },
           error: (error) => this.appendMessage({ sender: 'bot', text: this.errorMessage(error, 'URL could not be read.') })
@@ -304,6 +317,98 @@ export class AppComponent implements AfterViewChecked, OnDestroy, OnInit {
         this.appendMessage({ sender: 'bot', text: 'Unable to create chat session.' });
       }
     });
+  }
+
+  private refreshIndexingStatus(sessionId: string): void {
+    this.chatService.ingestionStatus(sessionId).subscribe({
+      next: (status) => {
+        this.applyIndexingStatus(status);
+        if (status.active) {
+          this.startIndexingWatch(sessionId, status.status);
+        }
+      }
+    });
+  }
+
+  private startIndexingWatch(sessionId: string, status: string): void {
+    if (!this.isActiveIndexingStatus(status)) {
+      return;
+    }
+
+    this.indexingStatusSubscription?.unsubscribe();
+    this.indexingActive.set(true);
+    this.indexingStage.set('Indexing started');
+    this.indexingMessage.set('Preparing content for search and summary.');
+
+    this.indexingStatusSubscription = timer(0, 1500)
+      .pipe(switchMap(() => this.chatService.ingestionStatus(sessionId)))
+      .subscribe({
+        next: (latestStatus) => {
+          this.applyIndexingStatus(latestStatus);
+          if (!latestStatus.active) {
+            this.indexingStatusSubscription?.unsubscribe();
+            this.indexingStatusSubscription = undefined;
+            const completionMessage = this.indexingCompletionMessage(latestStatus);
+            if (completionMessage) {
+              this.appendMessage({ sender: 'bot', text: completionMessage });
+            }
+            this.loadSessions();
+          }
+        },
+        error: () => {
+          this.indexingActive.set(false);
+          this.indexingStage.set('');
+          this.indexingMessage.set('');
+          this.indexingStatusSubscription = undefined;
+          this.appendMessage({
+            sender: 'bot',
+            text: 'Indexing status is temporarily unavailable. Please try again shortly.'
+          });
+        }
+      });
+  }
+
+  private applyIndexingStatus(status: IngestionStatusResponse): void {
+    this.indexingActive.set(status.active);
+    this.indexingStage.set(status.active ? status.stage : '');
+    this.indexingMessage.set(status.active ? status.message : '');
+  }
+
+  private clearIndexingState(): void {
+    this.indexingStatusSubscription?.unsubscribe();
+    this.indexingStatusSubscription = undefined;
+    this.indexingActive.set(false);
+    this.indexingStage.set('');
+    this.indexingMessage.set('');
+  }
+
+  private isActiveIndexingStatus(status: string): boolean {
+    return ['QUEUED', 'EXTRACTING', 'INDEXING', 'CHUNKING', 'EMBEDDING', 'STORING', 'SUMMARIZING'].includes(status);
+  }
+
+  private indexingCompletionMessage(status: IngestionStatusResponse): string {
+    const summary = status.summary?.trim();
+    if (status.status === 'COMPLETED') {
+      return [
+        'Content indexed successfully.',
+        summary ? `Summary:\n${summary}` : '',
+        'You can now ask questions about this content.'
+      ].filter(Boolean).join('\n\n');
+    }
+
+    if (status.status === 'NO_EMBEDDINGS') {
+      return [
+        'Content was extracted, but no searchable embeddings were stored.',
+        summary ? `Summary:\n${summary}` : '',
+        'Please try a clearer document or webpage if answers are incomplete.'
+      ].filter(Boolean).join('\n\n');
+    }
+
+    if (status.status === 'FAILED') {
+      return status.message || 'Indexing failed. Please try another document or URL.';
+    }
+
+    return '';
   }
 
   renderMarkdown(text: string): string {
