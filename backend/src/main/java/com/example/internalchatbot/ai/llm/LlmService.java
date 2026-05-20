@@ -19,6 +19,7 @@ import java.io.BufferedReader;
 import java.io.InputStreamReader;
 import java.time.Duration;
 import java.nio.charset.StandardCharsets;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
@@ -32,6 +33,8 @@ public class LlmService {
     private final String ollamaUrl;
     private final String model;
     private final double temperature;
+    private final int numPredict;
+    private final int numContext;
     private final int retryAttempts;
     private final Duration retryBackoff;
     private final RestTemplate restTemplate;
@@ -42,6 +45,8 @@ public class LlmService {
             @Value("${ollama.url}") String ollamaUrl,
             @Value("${ollama.model}") String model,
             @Value("${ollama.temperature:0.2}") double temperature,
+            @Value("${ollama.num-predict:512}") int numPredict,
+            @Value("${ollama.num-ctx:4096}") int numContext,
             @Value("${ollama.connect-timeout:5s}") Duration connectTimeout,
             @Value("${ollama.request-timeout:90s}") Duration requestTimeout,
             @Value("${ollama.retry-attempts:2}") int retryAttempts,
@@ -51,6 +56,8 @@ public class LlmService {
         this.ollamaUrl = ollamaUrl;
         this.model = model;
         this.temperature = temperature;
+        this.numPredict = Math.max(128, numPredict);
+        this.numContext = Math.max(2048, numContext);
         this.retryAttempts = Math.max(1, retryAttempts);
         this.retryBackoff = retryBackoff == null ? Duration.ofMillis(500) : retryBackoff;
         SimpleClientHttpRequestFactory requestFactory = new SimpleClientHttpRequestFactory();
@@ -73,7 +80,7 @@ public class LlmService {
                 "model", model,
                 "prompt", prompt,
                 "stream", false,
-                "options", Map.of("temperature", responseTemperature)
+                "options", options(responseTemperature)
         );
 
         HttpHeaders headers = new HttpHeaders();
@@ -98,7 +105,7 @@ public class LlmService {
                 "model", model,
                 "prompt", prompt,
                 "stream", true,
-                "options", Map.of("temperature", temperature)
+                "options", options(temperature)
         );
 
         HttpHeaders headers = new HttpHeaders();
@@ -156,6 +163,16 @@ public class LlmService {
         } catch (InterruptedException ex) {
             Thread.currentThread().interrupt();
         }
+    }
+
+    private Map<String, Object> options(double responseTemperature) {
+        Map<String, Object> options = new LinkedHashMap<>();
+        options.put("temperature", responseTemperature);
+        options.put("num_predict", numPredict);
+        options.put("num_ctx", numContext);
+        options.put("top_k", 30);
+        options.put("top_p", 0.9);
+        return options;
     }
 
     @FunctionalInterface

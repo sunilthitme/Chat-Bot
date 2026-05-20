@@ -10,7 +10,7 @@ This branch adds a DB-first enterprise chatbot with RAG, Ollama, multi-session m
 4. If private mode is off, the prompt includes current-session memory and vector knowledge retrieved from persisted embeddings.
 5. `LlmService` calls Ollama at `/api/generate` with a low temperature for enterprise consistency.
 6. The assistant response is saved only when private mode is off.
-7. Ingestion runs once per uploaded URL/document; chat requests only do bounded DB search, top-k vector retrieval, prompt construction, and one logical Ollama generation.
+7. Ingestion runs once per uploaded URL/document; chat requests only do bounded DB search, top-3 vector retrieval, prompt construction, and one logical Ollama generation.
 
 ## Folder Structure
 
@@ -132,14 +132,16 @@ Indexes are defined for session history, internal question lookup, token ranking
 ```http
 POST /api/chat/ask
 POST /api/chat/ask/stream
+POST /api/ingest/url
 POST /api/sessions
 GET  /api/sessions
 GET  /api/sessions/{sessionId}/messages
 PATCH /api/sessions/{sessionId}/private-mode
 POST /api/knowledge/documents
-POST /api/knowledge/urls
 POST /api/llm/generate
 ```
+
+`POST /api/ingest/url` is the dedicated URL pre-indexing API. It validates a public HTTP/HTTPS URL, queues background indexing, fetches and cleans the page, chunks extracted text, generates embeddings once, and stores vectors. Chat APIs never crawl URLs or process raw HTML.
 
 ## Private Mode Rules
 
@@ -172,21 +174,26 @@ The Angular app now has a ChatGPT-style layout with:
 - File upload action.
 - URL ingestion form.
 - Typing/loading animation.
-- No visible sources panel; internal retrieval metadata stays backend-only unless a user explicitly asks the assistant for references.
+- No visible sources panel; internal retrieval metadata stays backend-only and is not included in chat prompts or responses.
 
 ## Configuration
 
 ```properties
 ollama.enabled=true
 ollama.base-url=http://localhost:11434
-ollama.model=llama3.2
+ollama.model=phi3:mini
 ollama.embedding-model=nomic-embed-text
 ollama.temperature=0.2
+ollama.num-predict=512
+ollama.num-ctx=4096
 ollama.retry-attempts=2
 ollama.retry-backoff=500ms
-rag.top-k=5
-chat.memory.max-chars=5000
-chat.memory.retrieval-query-chars=1200
+rag.top-k=3
+rag.chunk-size=500
+rag.chunk-overlap=100
+rag.max-context-chars=3000
+chat.memory.max-chars=1800
+chat.memory.retrieval-query-chars=600
 chroma.enabled=true
 chroma.base-url=http://localhost:8000
 chroma.tenant-name=default
@@ -194,7 +201,7 @@ chroma.database-name=default
 chroma.timeout=10s
 chroma.health-check-timeout=2s
 chroma.health-check-retries=3
-chroma.retry-delay=10s
+chroma.retry-delay=30s
 url.block-private-hosts=true
 url.max-pages=20
 url.retry-attempts=3
@@ -212,6 +219,12 @@ spring.jpa.hibernate.ddl-auto=validate
 ```
 
 Run the reference schema in `backend/src/main/resources/schema-enterprise.sql` before using `ddl-auto=validate`.
+
+Start local ChromaDB with:
+
+```bash
+docker compose up -d chromadb
+```
 
 ## Production Recommendations
 

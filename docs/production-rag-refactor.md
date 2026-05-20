@@ -106,7 +106,9 @@ User question
 -> streamed Ollama response
 ```
 
-`AiOrchestratorService` owns the chat flow and delegates specialist work to memory, retrieval, prompt, LLM, and streaming modules. The chat path does not reread URLs, regenerate document embeddings, crawl websites, or rescan full documents.
+`AiOrchestratorService` owns the chat flow and delegates specialist work to memory, retrieval, prompt, LLM, and streaming modules. The chat path does not reread URLs, regenerate document embeddings, crawl websites, process raw HTML, or rescan full documents.
+
+URL ingestion is separated behind `POST /api/ingest/url`. It queues background indexing and returns immediately. The ingestion worker fetches content once, removes boilerplate, chunks text, generates embeddings once, and stores vectors for later chat retrieval.
 
 ## Document Ingestion
 
@@ -148,6 +150,7 @@ The URL reader now:
 - removes boilerplate HTML
 - deduplicates content by hash
 - extracts title and URL metadata per page
+- persists indexing status as `QUEUED`, `INDEXING`, `COMPLETED`, `NO_EMBEDDINGS`, or `FAILED`
 
 Configuration:
 
@@ -169,7 +172,7 @@ url.trafilatura.timeout=20s
 - Session-scoped memory only
 - Follow-up context is compressed into the retrieval query without making an extra LLM call
 - Context window compression through `rag.max-context-chars`
-- Retrieved context stays private by default; source details are included only when the user explicitly asks for sources
+- Retrieved context stays metadata-private; source URLs, vector IDs, embedding IDs, and session IDs are not included in prompts or chat responses
 - Streaming tokens plus final response metadata
 - No self-indexing of ordinary assistant replies, which prevents retrieval pollution
 - One generation call per user question
@@ -194,13 +197,14 @@ url.trafilatura.timeout=20s
 4. Confirm Ollama models exist:
 
 ```bash
-ollama pull llama3.2
+ollama pull phi3:mini
 ollama pull nomic-embed-text
 ```
 
 5. Confirm ChromaDB V2 heartbeat:
 
 ```bash
+docker compose up -d chromadb
 curl http://localhost:8000/api/v2/heartbeat
 ```
 

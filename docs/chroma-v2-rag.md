@@ -44,9 +44,9 @@ ChromaEmbeddingStore.builder()
 ```properties
 ollama.enabled=true
 ollama.base-url=http://localhost:11434
-ollama.model=llama3.2
+ollama.model=phi3:mini
 ollama.embedding-model=nomic-embed-text
-ollama.embedding-timeout=60s
+ollama.embedding-timeout=45s
 
 chroma.enabled=true
 chroma.base-url=http://localhost:8000
@@ -56,7 +56,7 @@ chroma.database-name=default
 chroma.timeout=10s
 chroma.health-check-timeout=2s
 chroma.health-check-retries=3
-chroma.retry-delay=10s
+chroma.retry-delay=30s
 chroma.log-requests=false
 chroma.log-responses=false
 ```
@@ -85,16 +85,17 @@ vectorStoreService.store(
 
 ```java
 List<Double> queryVector = embeddingService.embed(userQuestion);
-List<VectorSearchResult> results = vectorStoreService.search(queryVector, 5);
+List<VectorSearchResult> results = vectorStoreService.search(queryVector, 3);
 ```
 
-The chat search path runs through `ai.retrieval.RagRetrievalService`, which embeds the current question once, tries Chroma V2 first, limits retrieval to top 5 by default, and falls back to local cosine similarity over persisted vectors.
+The chat search path runs through `ai.retrieval.RagRetrievalService`, which embeds the current question once, tries Chroma V2 first, limits retrieval to top 3 by default, and falls back to local cosine similarity over persisted vectors.
 
 ## Debugging Chroma Issues
 
 Use these checks in order:
 
 ```bash
+docker compose up -d chromadb
 curl http://localhost:8000/api/v2/heartbeat
 curl http://localhost:8000/api/v2/version
 ```

@@ -5,6 +5,7 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
+import jakarta.persistence.Index;
 import jakarta.persistence.Lob;
 import jakarta.persistence.PrePersist;
 import jakarta.persistence.Table;
@@ -12,7 +13,13 @@ import jakarta.persistence.Table;
 import java.time.Instant;
 
 @Entity
-@Table(name = "uploaded_documents")
+@Table(
+        name = "uploaded_documents",
+        indexes = {
+                @Index(name = "idx_uploaded_source_url_type_private", columnList = "source_url, source_type, private_mode"),
+                @Index(name = "idx_uploaded_status", columnList = "ingestion_status")
+        }
+)
 public class UploadedDocument {
 
     @Id

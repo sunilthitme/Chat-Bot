@@ -87,7 +87,6 @@ public class AiOrchestratorService {
         );
 
         return new ChatResponse(
-                prepared.sessionId(),
                 reply,
                 prepared.privateMode()
         );
@@ -154,15 +153,13 @@ public class AiOrchestratorService {
         List<VectorSearchResult> retrievedKnowledge = ragRetrievalService.retrieve(retrievalQuestion, privateMode);
         long ragMs = elapsedMillis(ragStartedAt);
 
-        boolean explicitSourceRequest = promptBuilder.isSourceRequest(message);
         String prompt = promptBuilder.buildChatPrompt(
                 message,
                 retrievalQuestion,
                 memory,
                 storedAnswer,
                 retrievedKnowledge,
-                privateMode,
-                explicitSourceRequest
+                privateMode
         );
         log.info(
                 "chat request prepared requestId={} privateMode={} dbHit={} retrievedChunks={} sessionMs={} memoryMs={} dbMs={} ragMs={} prepMs={}",
@@ -271,7 +268,6 @@ public class AiOrchestratorService {
                 elapsedMillis(prepared.startedAt())
         );
         return new ChatResponse(
-                prepared.sessionId(),
                 reply,
                 prepared.privateMode()
         );

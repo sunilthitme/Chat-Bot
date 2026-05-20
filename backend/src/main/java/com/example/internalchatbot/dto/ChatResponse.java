@@ -3,7 +3,6 @@ package com.example.internalchatbot.dto;
 // Response DTO returned to the Angular frontend.
 public class ChatResponse {
 
-    private String sessionId;
     private String reply;
     private boolean privateMode;
 
@@ -11,18 +10,9 @@ public class ChatResponse {
         this.reply = reply;
     }
 
-    public ChatResponse(String sessionId, String reply, boolean privateMode) {
-        this.sessionId = sessionId;
+    public ChatResponse(String reply, boolean privateMode) {
         this.reply = reply;
         this.privateMode = privateMode;
-    }
-
-    public String getSessionId() {
-        return sessionId;
-    }
-
-    public void setSessionId(String sessionId) {
-        this.sessionId = sessionId;
     }
 
     public String getReply() {

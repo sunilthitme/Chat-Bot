@@ -55,10 +55,10 @@
           type="url"
           name="url"
           [(ngModel)]="urlInput"
-          placeholder="Read public URL"
+          placeholder="Index public webpage"
           [disabled]="isLoading()"
         >
-        <button type="submit" [disabled]="isLoading() || !urlInput.trim()">Read</button>
+        <button type="submit" [disabled]="isLoading() || !urlInput.trim()">Index</button>
       </form>
     </div>
 
@@ -87,7 +87,7 @@
         name="message"
         [(ngModel)]="userInput"
         (ngModelChange)="onUserInputChange($event)"
-        placeholder="Ask about internal knowledge, uploaded docs, or trusted URLs"
+        placeholder="Ask about internal knowledge, uploaded docs, or indexed webpages"
         autocomplete="off"
         [disabled]="isLoading()"
       >

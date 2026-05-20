@@ -10,7 +10,6 @@ export interface ChatRequest {
 }
 
 export interface ChatResponse {
-  sessionId: string;
   reply: string;
   privateMode: boolean;
 }
@@ -31,21 +30,15 @@ export interface StoredMessage {
 }
 
 export interface UploadResponse {
-  documentId: number | null;
-  sessionId: string;
-  sourceName: string;
-  chunksStored: number;
   privateMode: boolean;
+  status: string;
   message: string;
 }
 
 export interface UrlIngestResponse {
-  documentId: number | null;
-  sessionId: string;
-  url: string;
-  chunksStored: number;
   privateMode: boolean;
-  summary: string;
+  status: string;
+  message: string;
 }
 
 export type StreamingChatEvent =
@@ -152,7 +145,7 @@ export class ChatService {
   }
 
   ingestUrl(url: string, sessionId: string, privateMode: boolean): Observable<UrlIngestResponse> {
-    return this.http.post<UrlIngestResponse>(`${this.baseUrl}/knowledge/urls`, {
+    return this.http.post<UrlIngestResponse>(`${this.baseUrl}/ingest/url`, {
       url,
       sessionId,
       userKey: 'local-user',

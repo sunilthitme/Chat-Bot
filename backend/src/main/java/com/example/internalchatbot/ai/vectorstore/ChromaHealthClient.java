@@ -55,10 +55,10 @@ public class ChromaHealthClient {
             if (response.getStatusCode().is2xxSuccessful()) {
                 return true;
             }
-            log.warn("Chroma heartbeat returned status={} attempt={}/{} url={}",
+            log.debug("Chroma heartbeat returned status={} attempt={}/{} url={}",
                     response.getStatusCode(), attempt, properties.healthCheckRetries(), heartbeatUrl);
         } catch (RestClientException ex) {
-            log.warn("Chroma heartbeat failed attempt={}/{} url={} reason={}",
+            log.debug("Chroma heartbeat failed attempt={}/{} url={} reason={}",
                     attempt, properties.healthCheckRetries(), heartbeatUrl, ex.getMessage());
         }
         return false;

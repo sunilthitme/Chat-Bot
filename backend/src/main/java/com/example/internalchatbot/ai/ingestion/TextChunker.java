@@ -18,11 +18,11 @@ public class TextChunker {
     private final TextNormalizer textNormalizer;
 
     public TextChunker(
-            @Value("${rag.chunk-size:800}") int chunkSize,
-            @Value("${rag.chunk-overlap:150}") int overlap,
+            @Value("${rag.chunk-size:500}") int chunkSize,
+            @Value("${rag.chunk-overlap:100}") int overlap,
             TextNormalizer textNormalizer
     ) {
-        this.chunkSize = Math.max(400, chunkSize);
+        this.chunkSize = Math.max(300, chunkSize);
         this.overlap = Math.max(0, Math.min(overlap, this.chunkSize / 2));
         this.textNormalizer = textNormalizer;
     }

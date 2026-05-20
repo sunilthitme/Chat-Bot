@@ -27,6 +27,14 @@ public class AsyncConfiguration implements WebMvcConfigurer {
         return executor;
     }
 
+    @Bean(name = "ingestionTaskExecutor")
+    public AsyncTaskExecutor ingestionTaskExecutor() {
+        SimpleAsyncTaskExecutor executor = new SimpleAsyncTaskExecutor("ingest-");
+        executor.setVirtualThreads(true);
+        executor.setConcurrencyLimit(6);
+        return executor;
+    }
+
     @Override
     public void configureAsyncSupport(AsyncSupportConfigurer configurer) {
         configurer.setDefaultTimeout(requestTimeout.toMillis());

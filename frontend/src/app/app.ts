@@ -118,7 +118,6 @@ export class AppComponent implements AfterViewChecked, OnDestroy, OnInit {
             }));
           }
           if (event.type === 'done') {
-            this.currentSessionId.set(event.response.sessionId);
             this.privateMode.set(event.response.privateMode);
             this.updateMessage(botIndex, () => ({
               sender: 'bot',
@@ -221,12 +220,9 @@ export class AppComponent implements AfterViewChecked, OnDestroy, OnInit {
             }
             if (event.type === HttpEventType.Response && event.body) {
               const response = event.body;
-              this.currentSessionId.set(response.sessionId);
               this.appendMessage({
                 sender: 'bot',
-                text: response.privateMode
-                  ? 'I read the document for this private chat without saving it.'
-                  : `I read "${response.sourceName}" and it is ready for questions.`
+                text: response.message
               });
               this.loadSessions();
             }
@@ -249,12 +245,9 @@ export class AppComponent implements AfterViewChecked, OnDestroy, OnInit {
         .pipe(finalize(() => this.isLoading.set(false)))
         .subscribe({
           next: (response) => {
-            this.currentSessionId.set(response.sessionId);
             this.appendMessage({
               sender: 'bot',
-              text: response.privateMode
-                ? 'I read that URL for this private chat without saving it.'
-                : 'I read that URL and it is ready for questions.'
+              text: response.message
             });
             this.loadSessions();
           },

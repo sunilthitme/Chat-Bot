@@ -89,3 +89,5 @@ create index idx_embeddings_private_created on embeddings_metadata(private_mode,
 create index idx_embeddings_session_private on embeddings_metadata(session_id, private_mode);
 create index idx_embeddings_document on embeddings_metadata(document_id);
 create index idx_embeddings_hash on embeddings_metadata(content_hash);
+create index idx_uploaded_source_url_type_private on uploaded_documents(source_url, source_type, private_mode);
+create index idx_uploaded_status on uploaded_documents(ingestion_status);

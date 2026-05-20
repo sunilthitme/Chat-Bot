@@ -13,7 +13,7 @@ mvn spring-boot:run
 Ollama is enabled by default. Start Ollama and pull both models:
 
 ```bash
-ollama pull llama3.2
+ollama pull phi3:mini
 ollama pull nomic-embed-text
 ```
 
@@ -23,6 +23,7 @@ Chat requests always check the internal database first.
 - If the database has no answer, RAG context from stored documents and crawled URLs is provided.
 - If Ollama is unavailable, the service falls back to the DB answer or the default not-found message.
 - If private mode is enabled, messages and embeddings are not persisted.
+- Chat requests never fetch URLs, parse raw HTML, or regenerate document embeddings.
 
 ## Ask API
 
@@ -32,7 +33,6 @@ Content-Type: application/json
 
 {
   "message": "How to create RITM?",
-  "sessionId": "",
   "privateMode": false
 }
 ```
@@ -48,13 +48,22 @@ Document upload and URL ingestion:
 
 ```http
 POST http://localhost:8080/api/knowledge/documents
-POST http://localhost:8080/api/knowledge/urls
+POST http://localhost:8080/api/ingest/url
 ```
 
 Supported upload types: PDF, DOCX, TXT, LOG, CSV, plus Apache Tika fallback for other readable office/text formats.
 URL ingestion accepts public HTTP/HTTPS sites, follows redirects, reads sitemaps, crawls same-host links, and blocks private/local hosts by default with `url.block-private-hosts=true`.
 HTML extraction uses Readability4J first, then Boilerpipe, Apache Tika, structured Jsoup cleanup, and an optional Trafilatura CLI fallback when `url.trafilatura.enabled=true`.
-Chat responses do not expose retrieved source metadata to the frontend; users can ask the assistant for references when needed.
+Chat responses do not expose retrieved source metadata to the frontend.
+
+`POST /api/ingest/url` returns immediately with a queued status. The background ingestion executor fetches and cleans the page, chunks it with `rag.chunk-size=500`, embeds once, and stores vectors. Chat then uses similarity search only.
+
+## ChromaDB
+
+```bash
+docker compose up -d chromadb
+curl http://localhost:8000/api/v2/heartbeat
+```
 
 ## Direct LLM API
 

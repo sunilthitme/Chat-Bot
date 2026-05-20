@@ -1,0 +1,19 @@
+services:
+  chromadb:
+    image: chromadb/chroma:latest
+    container_name: internal-chatbot-chromadb
+    ports:
+      - "8000:8000"
+    volumes:
+      - chroma-data:/chroma/chroma
+    environment:
+      IS_PERSISTENT: "TRUE"
+      ANONYMIZED_TELEMETRY: "FALSE"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/v2/heartbeat', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+volumes:
+  chroma-data:

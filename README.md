@@ -20,7 +20,7 @@ Ollama is enabled by default in `backend/src/main/resources/application.properti
 Start Ollama locally and pull the configured models:
 
 ```bash
-ollama pull llama3.2
+ollama pull phi3:mini
 ollama pull nomic-embed-text
 ```
 
@@ -29,7 +29,7 @@ Important properties:
 ```properties
 ollama.enabled=true
 ollama.base-url=http://localhost:11434
-ollama.model=llama3.2
+ollama.model=phi3:mini
 ollama.embedding-model=nomic-embed-text
 chroma.enabled=true
 chroma.base-url=http://localhost:8000
@@ -37,7 +37,27 @@ chroma.tenant-name=default
 chroma.database-name=default
 ```
 
-Chat requests run through `ai.rag.AiOrchestratorService`: internal DB lookup first, top-5 vector retrieval second, prompt construction third, then one logical Ollama response. Private-mode requests skip message persistence, embedding persistence, and future knowledge storage.
+Chat requests run through `ai.rag.AiOrchestratorService`: internal DB lookup first, top-3 vector retrieval second, optimized prompt construction third, then one logical streamed Ollama response. Private-mode requests skip message persistence, embedding persistence, and future knowledge storage.
+
+URL ingestion is separate from chat:
+
+```http
+POST /api/ingest/url
+```
+
+The URL is fetched, cleaned, chunked, embedded, and stored in the background. Chat never rereads webpages or sends raw HTML to Ollama.
+
+## Run ChromaDB
+
+```bash
+docker compose up -d chromadb
+```
+
+Health check:
+
+```bash
+curl http://localhost:8000/api/v2/heartbeat
+```
 
 ## Run Frontend
 
@@ -57,7 +77,6 @@ Content-Type: application/json
 
 {
   "message": "How to create RITM?",
-  "sessionId": "",
   "privateMode": false
 }
 ```
@@ -66,10 +85,9 @@ Response:
 
 ```json
 {
-  "sessionId": "generated-session-id",
   "reply": "Steps to create RITM: 1. Open the service portal...",
   "privateMode": false
 }
 ```
 
-Additional APIs include `/api/sessions`, `/api/knowledge/documents`, `/api/knowledge/urls`, and `/api/chat/ask/stream`.
+Additional APIs include `/api/sessions`, `/api/knowledge/documents`, `/api/ingest/url`, and `/api/chat/ask/stream`.

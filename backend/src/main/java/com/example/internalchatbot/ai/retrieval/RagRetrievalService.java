@@ -23,7 +23,7 @@ public class RagRetrievalService {
     public RagRetrievalService(
             EmbeddingService embeddingService,
             VectorStoreService vectorStoreService,
-            @Value("${rag.top-k:5}") int topK,
+            @Value("${rag.top-k:3}") int topK,
             @Value("${rag.min-score:0.20}") double minScore
     ) {
         this.embeddingService = embeddingService;

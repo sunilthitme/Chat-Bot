@@ -20,6 +20,7 @@ public class ChromaEmbeddingStoreProvider {
 
     private volatile ChromaEmbeddingStore embeddingStore;
     private volatile Instant nextRetryAt = Instant.MIN;
+    private volatile boolean unavailableLogged;
 
     public ChromaEmbeddingStoreProvider(ChromaProperties properties, ChromaHealthClient healthClient) {
         this.properties = properties;
@@ -62,6 +63,7 @@ public class ChromaEmbeddingStoreProvider {
                         .build();
                 log.info("Chroma V2 embedding store initialized collection={} tenant={} database={}",
                         properties.collectionName(), properties.tenantName(), properties.databaseName());
+                unavailableLogged = false;
                 return Optional.of(embeddingStore);
             } catch (RuntimeException ex) {
                 scheduleRetry("Chroma embedding store initialization failed: " + ex.getMessage());
@@ -78,6 +80,11 @@ public class ChromaEmbeddingStoreProvider {
 
     private void scheduleRetry(String reason) {
         nextRetryAt = Instant.now().plus(properties.retryDelay());
-        log.warn("{}; next Chroma retry after {}", reason, nextRetryAt);
+        if (!unavailableLogged) {
+            log.warn("{}; using local vector fallback. Next Chroma retry after {}", reason, nextRetryAt);
+            unavailableLogged = true;
+            return;
+        }
+        log.debug("{}; next Chroma retry after {}", reason, nextRetryAt);
     }
 }
