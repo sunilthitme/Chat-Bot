@@ -45,7 +45,7 @@ public class LlmService {
             @Value("${ollama.url}") String ollamaUrl,
             @Value("${ollama.model}") String model,
             @Value("${ollama.temperature:0.2}") double temperature,
-            @Value("${ollama.num-predict:512}") int numPredict,
+            @Value("${ollama.num-predict:384}") int numPredict,
             @Value("${ollama.num-ctx:4096}") int numContext,
             @Value("${ollama.connect-timeout:5s}") Duration connectTimeout,
             @Value("${ollama.request-timeout:90s}") Duration requestTimeout,
@@ -56,7 +56,7 @@ public class LlmService {
         this.ollamaUrl = ollamaUrl;
         this.model = model;
         this.temperature = temperature;
-        this.numPredict = Math.max(128, numPredict);
+        this.numPredict = Math.max(128, Math.min(numPredict, 1024));
         this.numContext = Math.max(2048, numContext);
         this.retryAttempts = Math.max(1, retryAttempts);
         this.retryBackoff = retryBackoff == null ? Duration.ofMillis(500) : retryBackoff;

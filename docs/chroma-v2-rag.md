@@ -85,10 +85,10 @@ vectorStoreService.store(
 
 ```java
 List<Double> queryVector = embeddingService.embed(userQuestion);
-List<VectorSearchResult> results = vectorStoreService.search(queryVector, 3);
+List<VectorSearchResult> candidates = vectorStoreService.search(queryVector, 10);
 ```
 
-The chat search path runs through `ai.retrieval.RagRetrievalService`, which embeds the current question once, tries Chroma V2 first, limits retrieval to top 3 by default, and falls back to local cosine similarity over persisted vectors.
+The chat search path runs through `ai.retrieval.RagRetrievalService`, which embeds the current question once, tries Chroma V2 first, retrieves 10 candidates by default, reranks by vector score plus lexical overlap, keeps the best 3, and falls back to local cosine similarity over persisted vectors.
 
 ## Debugging Chroma Issues
 

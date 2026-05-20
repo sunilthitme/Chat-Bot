@@ -99,14 +99,16 @@ User question
 -> session memory lookup
 -> bounded internal DB lookup
 -> Ollama embedding generation
--> ChromaDB V2 retrieval
--> bounded local hybrid fallback retrieval
--> relevance filtering and context ranking
+-> ChromaDB V2 retrieval of 10 candidates
+-> bounded local hybrid fallback retrieval when needed
+-> lexical/vector reranking to top 3 chunks
 -> metadata-private prompt construction
 -> streamed Ollama response
 ```
 
 `AiOrchestratorService` owns the chat flow and delegates specialist work to memory, retrieval, prompt, LLM, and streaming modules. The chat path does not reread URLs, regenerate document embeddings, crawl websites, process raw HTML, or rescan full documents.
+
+`PromptBuilder` uses strict grounding: the LLM may answer only from the internal DB answer and `[Source N]` retrieved chunks. If the answer is not present, it must return `Information not found in the indexed knowledge.`
 
 URL ingestion is separated behind `POST /api/ingest/url`. It queues background indexing and returns immediately. The ingestion worker fetches content once, removes boilerplate, chunks text, generates embeddings once, and stores vectors for later chat retrieval.
 

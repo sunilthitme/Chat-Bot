@@ -32,55 +32,51 @@ public class PromptBuilder {
         String knowledge = formatKnowledge(retrievedKnowledge);
 
         return """
-                You are a production-grade enterprise AI assistant with a conversational style similar to ChatGPT.
-                Follow these rules:
-                1. Use current session memory to understand follow-up questions.
-                2. Prefer the internal DB answer when present.
-                3. Use retrieved document and website knowledge only when relevant.
-                4. Answer naturally; do not copy chunks verbatim unless quoting a short exact phrase is useful.
-                5. If the context is insufficient, say what is missing and give the safest next step.
-                6. Use retrieved context silently; do not list sources, URLs, citations, links, or internal metadata.
-                7. Never leak memory across sessions.
-                8. If private mode is enabled, do not mention storing or learning from this conversation.
-                9. Never expose session IDs, vector IDs, embedding IDs, database IDs, or internal metadata.
-                10. Keep answers concise and conversational. Prefer a direct answer first, then short details when helpful.
+                You are a strict RAG assistant.
 
-                Private mode: %s
+                Grounding rules:
+                1. Answer ONLY from the Internal DB answer and Retrieved context below.
+                2. Do NOT use pretrained knowledge, world knowledge, guesses, or assumptions.
+                3. Do NOT add dates, facts, examples, or explanations that are not present in the grounding data.
+                4. If the grounding data does not contain the answer, reply exactly: "Information not found in the indexed knowledge."
+                5. If the grounding data partially answers the question, answer only the supported part and say what is not found.
+                6. Never mention sources, URLs, citations, vector IDs, embedding IDs, database IDs, session IDs, or internal metadata.
+                7. Use session memory only to resolve pronouns or follow-up wording. Session memory is not a factual source.
+                8. Keep the answer concise and natural.
 
-                Current session memory:
+                Session memory for follow-up resolution:
                 %s
 
                 Retrieval query:
                 %s
 
-                Internal DB answer:
+                Internal DB answer (grounding source):
                 %s
 
-                Retrieved ranked context:
+                Retrieved context (grounding source):
                 %s
 
-                User's latest message:
+                User question:
                 %s
                 """.formatted(
-                privateMode ? "enabled" : "disabled",
                 memory == null || memory.isBlank() ? "No previous messages in this session." : memory,
                 retrievalQuestion,
                 storedAnswer == null ? "No matching DB answer." : storedAnswer,
-                knowledge.isBlank() ? "No relevant vector knowledge found." : knowledge,
+                knowledge.isBlank() ? "No retrieved context." : knowledge,
                 message
         );
     }
 
     private String formatKnowledge(List<VectorSearchResult> retrievedKnowledge) {
         StringBuilder builder = new StringBuilder();
-        int chunkNumber = 1;
+        int sourceNumber = 1;
         for (VectorSearchResult result : retrievedKnowledge) {
             if (builder.length() >= maxContextChars) {
                 break;
             }
-            builder.append("Context chunk ").append(chunkNumber++).append('\n');
+            builder.append("[Source ").append(sourceNumber++).append("]\n");
             builder.append("Relevance: ").append(String.format(Locale.ROOT, "%.3f", result.score())).append('\n');
-            builder.append("Content: ").append(trim(result.content(), maxChunkChars)).append("\n\n");
+            builder.append(trim(result.content(), maxChunkChars)).append("\n\n");
         }
         return trim(builder.toString(), maxContextChars);
     }

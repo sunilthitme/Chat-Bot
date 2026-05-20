@@ -29,7 +29,7 @@ import java.util.function.Consumer;
 public class AiOrchestratorService {
 
     private static final Logger log = LoggerFactory.getLogger(AiOrchestratorService.class);
-    private static final String NOT_FOUND_REPLY = "Sorry, I could not find information.";
+    private static final String NOT_FOUND_REPLY = "Information not found in the indexed knowledge.";
 
     private final ChatQuestionIndexService chatQuestionIndexService;
     private final LlmService llmService;
@@ -75,6 +75,10 @@ public class AiOrchestratorService {
     public ChatResponse ask(ChatRequest request) {
         PreparedChat prepared = prepare(request);
         long llmStartedAt = System.nanoTime();
+        if (!prepared.hasGrounding()) {
+            return noGroundingResponse(prepared, llmStartedAt, false, null);
+        }
+
         String reply = generateReply(prepared.prompt(), prepared.storedAnswer(), prepared.requestId());
         sessionService.saveMessage(prepared.sessionId(), "assistant", reply, prepared.privateMode());
 
@@ -95,6 +99,9 @@ public class AiOrchestratorService {
     public ChatResponse stream(ChatRequest request, Consumer<String> onToken) {
         PreparedChat prepared = prepare(request);
         long llmStartedAt = System.nanoTime();
+        if (!prepared.hasGrounding()) {
+            return noGroundingResponse(prepared, llmStartedAt, true, onToken);
+        }
 
         if (!llmService.isEnabled()) {
             String fallback = prepared.storedAnswer() == null ? NOT_FOUND_REPLY : prepared.storedAnswer();
@@ -181,7 +188,8 @@ public class AiOrchestratorService {
                 privateMode,
                 storedAnswer,
                 retrievedKnowledge,
-                prompt
+                prompt,
+                hasGrounding(storedAnswer, retrievedKnowledge)
         );
     }
 
@@ -273,6 +281,29 @@ public class AiOrchestratorService {
         );
     }
 
+    private ChatResponse noGroundingResponse(
+            PreparedChat prepared,
+            long llmStartedAt,
+            boolean stream,
+            Consumer<String> onToken
+    ) {
+        if (onToken != null) {
+            onToken.accept(NOT_FOUND_REPLY);
+        }
+        sessionService.saveMessage(prepared.sessionId(), "assistant", NOT_FOUND_REPLY, prepared.privateMode());
+        log.info(
+                "chat request completed requestId={} stream={} retrievedChunks=0 llmSkipped=true totalMs={}",
+                prepared.requestId(),
+                stream,
+                elapsedMillis(prepared.startedAt())
+        );
+        return response(prepared, NOT_FOUND_REPLY, llmStartedAt, stream);
+    }
+
+    private boolean hasGrounding(String storedAnswer, List<VectorSearchResult> retrievedKnowledge) {
+        return storedAnswer != null && !storedAnswer.isBlank() || !retrievedKnowledge.isEmpty();
+    }
+
     private String normalize(String text) {
         return text == null
                 ? ""
@@ -298,7 +329,8 @@ public class AiOrchestratorService {
             boolean privateMode,
             String storedAnswer,
             List<VectorSearchResult> retrievedKnowledge,
-            String prompt
+            String prompt,
+            boolean hasGrounding
     ) {
     }
 }

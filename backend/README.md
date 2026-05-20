@@ -24,6 +24,8 @@ Chat requests always check the internal database first.
 - If Ollama is unavailable, the service falls back to the DB answer or the default not-found message.
 - If private mode is enabled, messages and embeddings are not persisted.
 - Chat requests never fetch URLs, parse raw HTML, or regenerate document embeddings.
+- RAG retrieves 10 vector candidates, reranks them against the question, and sends only the best 3 chunks to Ollama.
+- The prompt instructs Ollama to answer only from the DB answer and retrieved chunks. Missing context returns `Information not found in the indexed knowledge.`
 
 ## Ask API
 
