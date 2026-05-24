@@ -24,7 +24,7 @@ Chat requests always check the internal database first.
 - If Ollama is unavailable, the service falls back to the DB answer or the default not-found message.
 - If private mode is enabled, messages and embeddings are not persisted.
 - Chat requests never fetch URLs, parse raw HTML, or regenerate document embeddings.
-- RAG retrieves Chroma and local hybrid candidates, reranks them against the question, and sends only the best 5 chunks to Ollama.
+- RAG searches the active uploaded document for the current session first, then local hybrid candidates, reranks them against the question, and sends only the best 5 chunks to Ollama.
 - Code and Spring Boot questions receive metadata boosts for Java, API, controller, service, and configuration chunks.
 - The prompt instructs Ollama to answer only from the DB answer and retrieved chunks. Missing context returns `Information not found in the indexed knowledge.`
 
@@ -61,6 +61,8 @@ HTML extraction uses Readability4J first, then Boilerpipe, Apache Tika, structur
 Chat responses do not expose retrieved source metadata to the frontend.
 
 Document upload and `POST /api/ingest/url` return immediately with a queued status. The background ingestion executor extracts content, cleans it, chunks it with `rag.chunk-size=800` and `rag.chunk-overlap=150`, embeds once, stores vectors, then generates a concise summary. Java and config files use syntax-preserving code chunking around classes, annotations, methods, endpoints, and configuration entries. The frontend polls `/api/ingest/status` and blocks questions until indexing reaches `COMPLETED`, `NO_EMBEDDINGS`, or `FAILED`. Chat then uses hybrid similarity and keyword search only.
+
+After a document is successfully indexed, its `documentId` is stored as the session `activeDocumentId`. Follow-up questions are scoped to that document first, which prevents older global pages such as unrelated tutorial URLs from being injected into the prompt.
 
 ## ChromaDB
 

@@ -27,6 +27,7 @@ export interface ChatSession {
   id: string;
   title: string;
   privateMode: boolean;
+  activeDocumentName?: string;
   createdAt: string;
   updatedAt: string;
 }

@@ -18,6 +18,7 @@ import java.time.Instant;
         indexes = {
                 @Index(name = "idx_embeddings_private_created", columnList = "private_mode, created_at"),
                 @Index(name = "idx_embeddings_session_private", columnList = "session_id, private_mode"),
+                @Index(name = "idx_embeddings_user_private", columnList = "user_key, private_mode"),
                 @Index(name = "idx_embeddings_document", columnList = "document_id"),
                 @Index(name = "idx_embeddings_hash", columnList = "content_hash"),
                 @Index(name = "idx_embeddings_filter", columnList = "document_type, language, topic, private_mode")
@@ -34,6 +35,9 @@ public class EmbeddingMetadata {
 
     @Column(length = 36)
     private String sessionId;
+
+    @Column(length = 160)
+    private String userKey;
 
     private Long documentId;
 
@@ -109,6 +113,14 @@ public class EmbeddingMetadata {
 
     public void setSessionId(String sessionId) {
         this.sessionId = sessionId;
+    }
+
+    public String getUserKey() {
+        return userKey;
+    }
+
+    public void setUserKey(String userKey) {
+        this.userKey = userKey;
     }
 
     public Long getDocumentId() {

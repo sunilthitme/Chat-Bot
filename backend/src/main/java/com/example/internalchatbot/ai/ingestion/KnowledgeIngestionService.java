@@ -117,8 +117,8 @@ public class KnowledgeIngestionService {
             );
         }
 
-        UploadedDocument queuedDocument = uploadedDocumentRepository.save(queuedFileDocument(session.getId(), queuedFile));
-        ingestionTaskExecutor.execute(() -> indexQueuedFile(queuedDocument.getId(), session.getId(), queuedFile));
+        UploadedDocument queuedDocument = uploadedDocumentRepository.save(queuedFileDocument(session.getId(), session.getUserKey(), queuedFile));
+        ingestionTaskExecutor.execute(() -> indexQueuedFile(queuedDocument.getId(), session.getId(), session.getUserKey(), queuedFile));
 
         return new DocumentUploadResponse(
                 false,
@@ -153,7 +153,7 @@ public class KnowledgeIngestionService {
                         document.getIngestionStatus(),
                         messageFor(document)
                 ))
-                .orElseGet(() -> queueUrlIndexing(normalizedUrl, session.getId(), loginRequired));
+                .orElseGet(() -> queueUrlIndexing(normalizedUrl, session.getId(), session.getUserKey(), loginRequired));
     }
 
     public IngestionStatusResponse statusForSession(String sessionId) {
@@ -198,13 +198,13 @@ public class KnowledgeIngestionService {
                 Map.of("source", "assistant-response"),
                 List.of(new ExtractedPage(1, "Conversation summary", content, Map.of("parser", "conversation")))
         );
-        return storeChunks("conversation", sessionId, null, document);
+        return storeChunks("conversation", sessionId, null, null, document);
     }
 
-    private UrlIngestResponse queueUrlIndexing(String normalizedUrl, String sessionId, boolean loginRequired) {
-        UploadedDocument document = queuedUrlDocument(sessionId, normalizedUrl);
+    private UrlIngestResponse queueUrlIndexing(String normalizedUrl, String sessionId, String userKey, boolean loginRequired) {
+        UploadedDocument document = queuedUrlDocument(sessionId, userKey, normalizedUrl);
         UploadedDocument queued = uploadedDocumentRepository.save(document);
-        ingestionTaskExecutor.execute(() -> indexQueuedUrl(queued.getId(), normalizedUrl, sessionId, loginRequired));
+        ingestionTaskExecutor.execute(() -> indexQueuedUrl(queued.getId(), normalizedUrl, sessionId, userKey, loginRequired));
         return new UrlIngestResponse(
                 false,
                 STATUS_QUEUED,
@@ -212,7 +212,7 @@ public class KnowledgeIngestionService {
         );
     }
 
-    private void indexQueuedFile(Long documentId, String sessionId, QueuedFile queuedFile) {
+    private void indexQueuedFile(Long documentId, String sessionId, String userKey, QueuedFile queuedFile) {
         long startedAt = System.nanoTime();
         updateDocumentStatus(documentId, STATUS_EXTRACTING, null);
         try {
@@ -226,7 +226,7 @@ public class KnowledgeIngestionService {
             applyExtractedDocument(document, extractedDocument, STATUS_CHUNKING);
             uploadedDocumentRepository.save(document);
 
-            int chunksStored = storeChunks("document", sessionId, documentId, extractedDocument);
+            int chunksStored = storeChunks("document", sessionId, userKey, documentId, extractedDocument);
             completeIndexedDocument(document, extractedDocument, chunksStored);
             log.info(
                     "document ingestion completed documentId={} source={} pages={} chunks={} totalMs={}",
@@ -242,7 +242,7 @@ public class KnowledgeIngestionService {
         }
     }
 
-    private void indexQueuedUrl(Long documentId, String normalizedUrl, String sessionId, boolean loginRequired) {
+    private void indexQueuedUrl(Long documentId, String normalizedUrl, String sessionId, String userKey, boolean loginRequired) {
         long startedAt = System.nanoTime();
         updateDocumentStatus(documentId, STATUS_EXTRACTING, null);
         try {
@@ -252,7 +252,7 @@ public class KnowledgeIngestionService {
             applyExtractedDocument(document, extractedDocument, STATUS_CHUNKING);
             uploadedDocumentRepository.save(document);
 
-            int chunksStored = storeChunks("url", sessionId, documentId, extractedDocument);
+            int chunksStored = storeChunks("url", sessionId, userKey, documentId, extractedDocument);
             completeIndexedDocument(document, extractedDocument, chunksStored);
             log.info(
                     "URL ingestion completed documentId={} urlHash={} pages={} chunks={} totalMs={}",
@@ -277,6 +277,16 @@ public class KnowledgeIngestionService {
         document.setSummary(summary);
         document.setIngestionStatus(chunksStored > 0 ? STATUS_COMPLETED : STATUS_NO_EMBEDDINGS);
         uploadedDocumentRepository.save(document);
+        if (chunksStored > 0) {
+            sessionService.activateDocument(document.getSessionId(), document.getId(), document.getSourceName());
+            log.info(
+                    "active document set sessionId={} documentId={} source={} chunks={}",
+                    safe(document.getSessionId()),
+                    document.getId(),
+                    document.getSourceName(),
+                    chunksStored
+            );
+        }
     }
 
     private QueuedFile queuedFile(MultipartFile file) {
@@ -294,9 +304,10 @@ public class KnowledgeIngestionService {
         }
     }
 
-    private UploadedDocument queuedFileDocument(String sessionId, QueuedFile file) {
+    private UploadedDocument queuedFileDocument(String sessionId, String userKey, QueuedFile file) {
         UploadedDocument document = new UploadedDocument();
         document.setSessionId(sessionId);
+        document.setUserKey(userKey);
         document.setSourceName(file.filename());
         document.setSourceType("file");
         document.setSourceUrl(null);
@@ -312,9 +323,10 @@ public class KnowledgeIngestionService {
         return document;
     }
 
-    private UploadedDocument queuedUrlDocument(String sessionId, String normalizedUrl) {
+    private UploadedDocument queuedUrlDocument(String sessionId, String userKey, String normalizedUrl) {
         UploadedDocument document = new UploadedDocument();
         document.setSessionId(sessionId);
+        document.setUserKey(userKey);
         document.setSourceName("Website");
         document.setSourceType("url");
         document.setSourceUrl(normalizedUrl);
@@ -347,6 +359,7 @@ public class KnowledgeIngestionService {
     private int storeChunks(
             String namespace,
             String sessionId,
+            String userKey,
             Long documentId,
             ExtractedDocument extractedDocument
     ) {
@@ -385,7 +398,7 @@ public class KnowledgeIngestionService {
             if (vector.isEmpty()) {
                 continue;
             }
-            vectorStoreService.store(namespace, sessionId, documentId, chunks.get(index), vector, false);
+            vectorStoreService.store(namespace, sessionId, userKey, documentId, chunks.get(index), vector, false);
             stored++;
         }
         return stored;
@@ -493,6 +506,13 @@ public class KnowledgeIngestionService {
 
     private long elapsedMillis(long startedAt) {
         return (System.nanoTime() - startedAt) / 1_000_000;
+    }
+
+    private String safe(String value) {
+        if (value == null || value.isBlank()) {
+            return "";
+        }
+        return value.length() <= 12 ? value : value.substring(0, 12);
     }
 
     private record QueuedFile(String filename, String contentType, byte[] bytes) {

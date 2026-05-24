@@ -99,6 +99,17 @@ public class SessionService {
         chatSessionRepository.findById(sessionId).ifPresent(session -> chatSessionRepository.save(session));
     }
 
+    public void activateDocument(String sessionId, Long documentId, String documentName) {
+        if (sessionId == null || sessionId.isBlank() || documentId == null) {
+            return;
+        }
+        chatSessionRepository.findById(sessionId).ifPresent(session -> {
+            session.setActiveDocumentId(documentId);
+            session.setActiveDocumentName(documentName);
+            chatSessionRepository.save(session);
+        });
+    }
+
     public String memoryForSession(String sessionId) {
         return memoryForSession(sessionId, 6_000);
     }
@@ -124,6 +135,7 @@ public class SessionService {
                 session.getId(),
                 session.getTitle(),
                 session.isPrivateMode(),
+                session.getActiveDocumentName(),
                 session.getCreatedAt(),
                 session.getUpdatedAt()
         );

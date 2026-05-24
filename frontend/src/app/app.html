@@ -14,7 +14,7 @@
         (click)="selectSession(session)"
       >
         <span>{{ session.title }}</span>
-        <small>{{ session.privateMode ? 'Private' : 'Saved' }}</small>
+        <small>{{ session.activeDocumentName || (session.privateMode ? 'Private' : 'Saved') }}</small>
       </button>
     </div>
   </aside>
@@ -23,7 +23,7 @@
     <header class="chat-header">
       <div>
         <h1>Internal Chatbot</h1>
-        <p>DB-first RAG assistant</p>
+        <p>{{ activeDocumentLabel() }}</p>
       </div>
       <div class="header-actions">
         <button

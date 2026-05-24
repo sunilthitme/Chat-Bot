@@ -37,7 +37,7 @@ chroma.tenant-name=default
 chroma.database-name=default
 ```
 
-Chat requests run through `ai.rag.AiOrchestratorService`: internal DB lookup first, retrieve Chroma and local hybrid candidates, rerank to the best 5 chunks, build a strict grounded prompt, then make one logical streamed Ollama response. Private-mode requests skip message persistence, embedding persistence, and future knowledge storage.
+Chat requests run through `ai.rag.AiOrchestratorService`: internal DB lookup first, search the active uploaded document for the session, retrieve local hybrid candidates, rerank to the best 5 chunks, build a strict grounded prompt, then make one logical streamed Ollama response. Private-mode requests skip message persistence, embedding persistence, and future knowledge storage.
 
 URL ingestion is separate from chat:
 

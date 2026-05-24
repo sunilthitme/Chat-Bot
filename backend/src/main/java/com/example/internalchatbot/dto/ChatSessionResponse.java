@@ -6,6 +6,7 @@ public record ChatSessionResponse(
         String id,
         String title,
         boolean privateMode,
+        String activeDocumentName,
         Instant createdAt,
         Instant updatedAt
 ) {

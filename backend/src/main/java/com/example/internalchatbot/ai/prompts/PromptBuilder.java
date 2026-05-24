@@ -25,6 +25,7 @@ public class PromptBuilder {
             String message,
             String retrievalQuestion,
             String memory,
+            String activeDocumentName,
             String storedAnswer,
             List<VectorSearchResult> retrievedKnowledge,
             boolean privateMode
@@ -48,6 +49,9 @@ public class PromptBuilder {
                 Session memory for follow-up resolution:
                 %s
 
+                Active document:
+                %s
+
                 Retrieval query:
                 %s
 
@@ -61,6 +65,9 @@ public class PromptBuilder {
                 %s
                 """.formatted(
                 memory == null || memory.isBlank() ? "No previous messages in this session." : memory,
+                activeDocumentName == null || activeDocumentName.isBlank()
+                        ? "No active uploaded document."
+                        : activeDocumentName,
                 retrievalQuestion,
                 storedAnswer == null ? "No matching DB answer." : storedAnswer,
                 knowledge.isBlank() ? "No retrieved context." : knowledge,

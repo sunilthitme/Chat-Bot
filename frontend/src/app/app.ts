@@ -279,6 +279,11 @@ export class AppComponent implements AfterViewChecked, OnDestroy, OnInit {
     this.inputChanges.next(value);
   }
 
+  activeDocumentLabel(): string {
+    const session = this.sessions().find((item) => item.id === this.currentSessionId());
+    return session?.activeDocumentName ? `Active document: ${session.activeDocumentName}` : 'DB-first scoped RAG assistant';
+  }
+
   private loadSessions(): void {
     if (this.sessionsRequestInFlight) {
       return;

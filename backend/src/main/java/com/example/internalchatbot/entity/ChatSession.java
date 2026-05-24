@@ -33,6 +33,11 @@ public class ChatSession {
     @Column(nullable = false)
     private boolean privateMode;
 
+    private Long activeDocumentId;
+
+    @Column(length = 260)
+    private String activeDocumentName;
+
     @Column(nullable = false)
     private Instant createdAt;
 
@@ -86,6 +91,22 @@ public class ChatSession {
 
     public void setPrivateMode(boolean privateMode) {
         this.privateMode = privateMode;
+    }
+
+    public Long getActiveDocumentId() {
+        return activeDocumentId;
+    }
+
+    public void setActiveDocumentId(Long activeDocumentId) {
+        this.activeDocumentId = activeDocumentId;
+    }
+
+    public String getActiveDocumentName() {
+        return activeDocumentName;
+    }
+
+    public void setActiveDocumentName(String activeDocumentName) {
+        this.activeDocumentName = activeDocumentName;
     }
 
     public Instant getCreatedAt() {

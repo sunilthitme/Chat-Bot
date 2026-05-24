@@ -41,27 +41,56 @@ public class RagRetrievalService {
         this.embeddingService = embeddingService;
         this.vectorStoreService = vectorStoreService;
         this.topK = Math.max(1, Math.min(topK, 10));
-        this.candidateTopK = Math.max(this.topK, Math.min(candidateTopK, 20));
+        this.candidateTopK = Math.max(this.topK, Math.min(candidateTopK, 50));
         this.minScore = minScore;
     }
 
     public List<VectorSearchResult> retrieve(String sessionId, String retrievalQuestion, boolean privateMode) {
+        return retrieve(sessionId, null, null, retrievalQuestion, privateMode);
+    }
+
+    public List<VectorSearchResult> retrieve(
+            String sessionId,
+            String userKey,
+            Long activeDocumentId,
+            String retrievalQuestion,
+            boolean privateMode
+    ) {
         if (privateMode || retrievalQuestion == null || retrievalQuestion.isBlank()) {
             return List.of();
         }
 
         try {
+            long startedAt = System.nanoTime();
             List<Double> queryVector = embeddingService.embed(retrievalQuestion);
+            log.info(
+                    "rag embedding generated sessionId={} activeDocumentId={} queryChars={} vectorDims={}",
+                    safe(sessionId),
+                    activeDocumentId,
+                    retrievalQuestion.length(),
+                    queryVector.size()
+            );
             RetrievalFilter filter = inferFilter(retrievalQuestion);
             List<VectorSearchResult> candidates = vectorStoreService.search(
                     sessionId,
+                    userKey,
+                    activeDocumentId,
                     retrievalQuestion,
                     queryVector,
                     candidateTopK,
                     filter
             );
             List<VectorSearchResult> reranked = rerank(retrievalQuestion, candidates);
-            log.debug("RAG reranked candidates={} selected={} filter={}", candidates.size(), reranked.size(), filter);
+            log.info(
+                    "rag retrieval completed sessionId={} activeDocumentId={} candidates={} selected={} topScores={} filter={} totalMs={}",
+                    safe(sessionId),
+                    activeDocumentId,
+                    candidates.size(),
+                    reranked.size(),
+                    topScores(reranked),
+                    filter,
+                    elapsedMillis(startedAt)
+            );
             return reranked;
         } catch (RuntimeException ex) {
             log.warn("RAG retrieval skipped because embedding generation or vector search failed.", ex);
@@ -190,6 +219,25 @@ public class RagRetrievalService {
         return text == null
                 ? ""
                 : text.toLowerCase().replaceAll("[^a-z0-9 ]", " ").replaceAll("\\s+", " ").trim();
+    }
+
+    private String topScores(List<VectorSearchResult> results) {
+        return results.stream()
+                .limit(5)
+                .map(result -> result.sourceName() + ":" + Math.round(result.score() * 1000.0) / 1000.0)
+                .toList()
+                .toString();
+    }
+
+    private long elapsedMillis(long startedAt) {
+        return (System.nanoTime() - startedAt) / 1_000_000;
+    }
+
+    private String safe(String value) {
+        if (value == null || value.isBlank()) {
+            return "";
+        }
+        return value.length() <= 12 ? value : value.substring(0, 12);
     }
 
     private record RankedResult(VectorSearchResult result, double score) {

@@ -49,9 +49,17 @@ ai/
 
 ## Database Schema Additions
 
+`chat_sessions` stores active document memory:
+
+```sql
+active_document_id bigint,
+active_document_name varchar(260)
+```
+
 `embeddings_metadata` stores retrieval metadata per chunk:
 
 ```sql
+user_key varchar(160),
 document_type varchar(80),
 language varchar(80),
 topic varchar(160)
@@ -61,6 +69,7 @@ Indexes:
 
 ```sql
 idx_embeddings_session_private(session_id, private_mode)
+idx_embeddings_user_private(user_key, private_mode)
 idx_embeddings_document(document_id)
 idx_embeddings_hash(content_hash)
 idx_embeddings_filter(document_type, language, topic, private_mode)
@@ -97,6 +106,7 @@ PDF/DOCX/TXT/CSV/Java/Config/URL
 -> generate embeddings with nomic-embed-text
 -> persist vectors in ChromaDB and local metadata
 -> generate concise upload summary
+-> set activeDocumentId on the chat session
 -> mark indexing complete
 ```
 
@@ -106,8 +116,9 @@ PDF/DOCX/TXT/CSV/Java/Config/URL
 User question
 -> recent session memory builds retrieval query
 -> query embedding
--> Chroma vector search
--> local semantic + keyword search over session and long-term chunks
+-> active document scoped search when activeDocumentId exists
+-> session scoped local semantic + keyword search
+-> user scoped long-term search only when no session document exists
 -> metadata boosts for code/java/spring/api/config queries
 -> rerank candidates
 -> keep top 5 chunks
@@ -117,7 +128,8 @@ User question
 
 ## Memory Flow
 
-- Long-term memory: uploaded documents, URLs, chunks, embeddings, and metadata.
+- Active document memory: latest successfully indexed upload is stored on the chat session and searched first.
+- Long-term memory: uploaded documents, URLs, chunks, embeddings, and metadata scoped by user key.
 - Short-term memory: last 20 session messages compressed into the retrieval query and prompt.
 - Private mode: skips message persistence, embeddings, and long-term storage.
 
@@ -137,6 +149,7 @@ The LLM is instructed to answer only from grounded context and return `Informati
 ## Production Best Practices
 
 - Keep ingestion and chat flows separate.
+- Treat active uploaded documents as the first retrieval scope to prevent unrelated global pages from winning.
 - Never reread uploaded documents during chat.
 - Never regenerate document embeddings during chat.
 - Use ChromaDB for vector search and local metadata as a resilient hybrid index.

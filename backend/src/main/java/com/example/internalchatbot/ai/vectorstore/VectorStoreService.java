@@ -36,21 +36,38 @@ public class VectorStoreService {
     private final ObjectMapper objectMapper;
     private final ChromaEmbeddingStoreProvider chromaEmbeddingStoreProvider;
     private final int localCandidateLimit;
+    private final boolean allowGlobalRetrieval;
 
     public VectorStoreService(
             EmbeddingMetadataRepository embeddingMetadataRepository,
             ChromaEmbeddingStoreProvider chromaEmbeddingStoreProvider,
-            @Value("${rag.local-candidate-limit:600}") int localCandidateLimit
+            @Value("${rag.local-candidate-limit:600}") int localCandidateLimit,
+            @Value("${rag.allow-global-retrieval:false}") boolean allowGlobalRetrieval
     ) {
         this.embeddingMetadataRepository = embeddingMetadataRepository;
         this.chromaEmbeddingStoreProvider = chromaEmbeddingStoreProvider;
         this.objectMapper = new ObjectMapper();
         this.localCandidateLimit = Math.max(50, localCandidateLimit);
+        this.allowGlobalRetrieval = allowGlobalRetrieval;
     }
 
     public EmbeddingMetadata store(
             String namespace,
             String sessionId,
+            Long documentId,
+            String sourceName,
+            String sourceType,
+            String content,
+            List<Double> vector,
+            boolean privateMode
+    ) {
+        return store(namespace, sessionId, null, documentId, sourceName, sourceType, content, vector, privateMode);
+    }
+
+    public EmbeddingMetadata store(
+            String namespace,
+            String sessionId,
+            String userKey,
             Long documentId,
             String sourceName,
             String sourceType,
@@ -73,12 +90,24 @@ public class VectorStoreService {
                 ContentHash.sha256(content),
                 Map.of()
         );
-        return store(namespace, sessionId, documentId, chunk, vector, privateMode);
+        return store(namespace, sessionId, userKey, documentId, chunk, vector, privateMode);
     }
 
     public EmbeddingMetadata store(
             String namespace,
             String sessionId,
+            Long documentId,
+            DocumentChunk chunk,
+            List<Double> vector,
+            boolean privateMode
+    ) {
+        return store(namespace, sessionId, null, documentId, chunk, vector, privateMode);
+    }
+
+    public EmbeddingMetadata store(
+            String namespace,
+            String sessionId,
+            String userKey,
             Long documentId,
             DocumentChunk chunk,
             List<Double> vector,
@@ -101,6 +130,7 @@ public class VectorStoreService {
         EmbeddingMetadata metadata = new EmbeddingMetadata();
         metadata.setNamespace(namespace);
         metadata.setSessionId(sessionId);
+        metadata.setUserKey(userKey);
         metadata.setDocumentId(documentId);
         metadata.setSourceName(chunk.sourceName());
         metadata.setSourceType(chunk.sourceType());
@@ -124,15 +154,17 @@ public class VectorStoreService {
     }
 
     public List<VectorSearchResult> search(List<Double> queryVector, int topK) {
-        return search(null, "", queryVector, topK, RetrievalFilter.none());
+        return search(null, null, null, "", queryVector, topK, RetrievalFilter.none());
     }
 
     public List<VectorSearchResult> search(String queryText, List<Double> queryVector, int topK) {
-        return search(null, queryText, queryVector, topK, RetrievalFilter.none());
+        return search(null, null, null, queryText, queryVector, topK, RetrievalFilter.none());
     }
 
     public List<VectorSearchResult> search(
             String sessionId,
+            String userKey,
+            Long activeDocumentId,
             String queryText,
             List<Double> queryVector,
             int topK,
@@ -144,12 +176,26 @@ public class VectorStoreService {
 
         int candidateCount = Math.max(topK * 8, topK);
         Map<String, VectorSearchResult> merged = new LinkedHashMap<>();
-        for (VectorSearchResult result : searchChroma(queryVector, candidateCount)) {
-            putBest(merged, applySearchBoosts(result, sessionId, queryText, filter));
+        boolean documentScoped = activeDocumentId != null;
+        if (!documentScoped && allowGlobalRetrieval) {
+            for (VectorSearchResult result : searchChroma(queryVector, candidateCount)) {
+                putBest(merged, applySearchBoosts(result, sessionId, queryText, filter));
+            }
         }
-        for (EmbeddingMetadata metadata : localCandidates(sessionId)) {
+        List<EmbeddingMetadata> localCandidates = localCandidates(sessionId, userKey, activeDocumentId);
+        for (EmbeddingMetadata metadata : localCandidates) {
             putBest(merged, toSearchResult(metadata, queryVector, queryText, sessionId, filter));
         }
+        log.info(
+                "vector search completed sessionId={} activeDocumentId={} userKey={} scope={} localCandidates={} mergedCandidates={} allowGlobal={}",
+                safe(sessionId),
+                activeDocumentId,
+                safe(userKey),
+                documentScoped ? "document" : "session-user",
+                localCandidates.size(),
+                merged.size(),
+                allowGlobalRetrieval
+        );
 
         return merged.values()
                 .stream()
@@ -174,17 +220,33 @@ public class VectorStoreService {
         embeddingMetadataRepository.deleteAll(embeddings);
     }
 
-    private List<EmbeddingMetadata> localCandidates(String sessionId) {
+    private List<EmbeddingMetadata> localCandidates(String sessionId, String userKey, Long activeDocumentId) {
         List<EmbeddingMetadata> candidates = new ArrayList<>();
+        if (activeDocumentId != null) {
+            if (sessionId != null && !sessionId.isBlank()) {
+                candidates.addAll(embeddingMetadataRepository.findByDocumentIdAndSessionIdAndPrivateModeFalse(activeDocumentId, sessionId));
+            } else {
+                candidates.addAll(embeddingMetadataRepository.findByDocumentIdAndPrivateModeFalse(activeDocumentId));
+            }
+            return candidates;
+        }
         if (sessionId != null && !sessionId.isBlank()) {
             candidates.addAll(embeddingMetadataRepository.findBySessionIdAndPrivateModeFalseOrderByCreatedAtDesc(
                     sessionId,
                     PageRequest.of(0, localCandidateLimit)
             ));
         }
-        candidates.addAll(embeddingMetadataRepository.findByPrivateModeFalseOrderByCreatedAtDesc(
-                PageRequest.of(0, localCandidateLimit)
-        ));
+        if (candidates.isEmpty() && userKey != null && !userKey.isBlank()) {
+            candidates.addAll(embeddingMetadataRepository.findByUserKeyAndPrivateModeFalseOrderByCreatedAtDesc(
+                    userKey,
+                    PageRequest.of(0, localCandidateLimit)
+            ));
+        }
+        if (candidates.isEmpty() && allowGlobalRetrieval) {
+            candidates.addAll(embeddingMetadataRepository.findByPrivateModeFalseOrderByCreatedAtDesc(
+                    PageRequest.of(0, localCandidateLimit)
+            ));
+        }
         return candidates;
     }
 
@@ -304,6 +366,8 @@ public class VectorStoreService {
         values.put("sourceType", metadata.getSourceType());
         values.put("embeddingId", metadata.getId());
         putIfPresent(values, "sessionId", metadata.getSessionId());
+        putIfPresent(values, "userKey", metadata.getUserKey());
+        putIfPresent(values, "documentId", metadata.getDocumentId());
         putIfPresent(values, "sourceUrl", metadata.getSourceUrl());
         putIfPresent(values, "pageNumber", metadata.getPageNumber());
         putIfPresent(values, "sectionTitle", metadata.getSectionTitle());
@@ -471,6 +535,13 @@ public class VectorStoreService {
 
     private String normalizeLabel(String value) {
         return value == null ? "" : value.trim().toLowerCase(Locale.ROOT);
+    }
+
+    private String safe(String value) {
+        if (value == null || value.isBlank()) {
+            return "";
+        }
+        return value.length() <= 12 ? value : value.substring(0, 12);
     }
 
     private void putIfPresent(Map<String, Object> values, String key, Object value) {

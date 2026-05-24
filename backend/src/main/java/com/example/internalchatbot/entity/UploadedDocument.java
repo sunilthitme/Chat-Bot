@@ -30,6 +30,9 @@ public class UploadedDocument {
     @Column(length = 36)
     private String sessionId;
 
+    @Column(length = 160)
+    private String userKey;
+
     @Column(nullable = false, length = 260)
     private String sourceName;
 
@@ -91,6 +94,14 @@ public class UploadedDocument {
 
     public void setSessionId(String sessionId) {
         this.sessionId = sessionId;
+    }
+
+    public String getUserKey() {
+        return userKey;
+    }
+
+    public void setUserKey(String userKey) {
+        this.userKey = userKey;
     }
 
     public String getSourceName() {

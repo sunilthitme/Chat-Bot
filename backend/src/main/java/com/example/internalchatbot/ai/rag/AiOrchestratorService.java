@@ -189,23 +189,33 @@ public class AiOrchestratorService {
         long dbMs = elapsedMillis(dbStartedAt);
 
         long ragStartedAt = System.nanoTime();
-        List<VectorSearchResult> retrievedKnowledge = ragRetrievalService.retrieve(session.getId(), retrievalQuestion, privateMode);
+        List<VectorSearchResult> retrievedKnowledge = ragRetrievalService.retrieve(
+                session.getId(),
+                session.getUserKey(),
+                session.getActiveDocumentId(),
+                retrievalQuestion,
+                privateMode
+        );
         long ragMs = elapsedMillis(ragStartedAt);
 
         String prompt = promptBuilder.buildChatPrompt(
                 message,
                 retrievalQuestion,
                 memory,
+                session.getActiveDocumentName(),
                 storedAnswer,
                 retrievedKnowledge,
                 privateMode
         );
         log.info(
-                "chat request prepared requestId={} privateMode={} dbHit={} retrievedChunks={} sessionMs={} memoryMs={} dbMs={} ragMs={} prepMs={}",
+                "chat request prepared requestId={} privateMode={} activeDocumentId={} activeDocumentName={} dbHit={} retrievedChunks={} promptChars={} sessionMs={} memoryMs={} dbMs={} ragMs={} prepMs={}",
                 requestId,
                 privateMode,
+                session.getActiveDocumentId(),
+                session.getActiveDocumentName(),
                 storedAnswer != null,
                 retrievedKnowledge.size(),
+                prompt.length(),
                 sessionMs,
                 memoryMs,
                 dbMs,
