@@ -40,9 +40,10 @@ public class PromptBuilder {
                 3. Do NOT add dates, facts, examples, or explanations that are not present in the grounding data.
                 4. If the grounding data does not contain the answer, reply exactly: "Information not found in the indexed knowledge."
                 5. If the grounding data partially answers the question, answer only the supported part and say what is not found.
-                6. Never mention sources, URLs, citations, vector IDs, embedding IDs, database IDs, session IDs, or internal metadata.
+                6. Never mention vector IDs, embedding IDs, database IDs, session IDs, or internal metadata.
                 7. Use session memory only to resolve pronouns or follow-up wording. Session memory is not a factual source.
                 8. Keep the answer concise and natural.
+                9. For code questions, preserve method/class/config syntax from retrieved code chunks and use fenced code blocks.
 
                 Session memory for follow-up resolution:
                 %s
@@ -75,6 +76,19 @@ public class PromptBuilder {
                 break;
             }
             builder.append("[Source ").append(sourceNumber++).append("]\n");
+            builder.append("Name: ").append(result.sourceName()).append('\n');
+            if (result.pageNumber() != null) {
+                builder.append("Page: ").append(result.pageNumber()).append('\n');
+            }
+            if (result.sectionTitle() != null && !result.sectionTitle().isBlank()) {
+                builder.append("Section: ").append(result.sectionTitle()).append('\n');
+            }
+            if (result.documentType() != null && !result.documentType().isBlank()) {
+                builder.append("Type: ").append(result.documentType()).append('\n');
+            }
+            if (result.language() != null && !result.language().isBlank()) {
+                builder.append("Language: ").append(result.language()).append('\n');
+            }
             builder.append("Relevance: ").append(String.format(Locale.ROOT, "%.3f", result.score())).append('\n');
             builder.append(trim(result.content(), maxChunkChars)).append("\n\n");
         }

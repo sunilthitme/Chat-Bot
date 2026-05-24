@@ -70,6 +70,7 @@ ai/
     DocumentExtractionService.java
     KnowledgeIngestionService.java
     TextChunker.java
+    IngestionSummaryService.java
   crawling/
     UrlReaderService.java
     UrlValidationService.java
@@ -78,6 +79,7 @@ ai/
   embeddings/
     EmbeddingService.java
   vectorstore/
+    RetrievalFilter.java
     VectorStoreService.java
     ChromaEmbeddingStoreProvider.java
     ChromaHealthClient.java
@@ -99,9 +101,10 @@ User question
 -> session memory lookup
 -> bounded internal DB lookup
 -> Ollama embedding generation
--> ChromaDB V2 retrieval of 10 candidates
--> bounded local hybrid fallback retrieval when needed
--> lexical/vector reranking to top 3 chunks
+-> ChromaDB V2 retrieval
+-> local semantic + keyword retrieval over session and long-term chunks
+-> metadata boosts for code/java/spring/api/config questions
+-> lexical/vector reranking to top 5 chunks
 -> metadata-private prompt construction
 -> streamed Ollama response
 ```
@@ -134,6 +137,7 @@ Supported inputs:
 - DOCX with heading/section-aware POI extraction
 - TXT and LOG with virtual page splitting
 - CSV with header-aware row normalization
+- Java, XML, properties, YAML, and JSON with syntax-preserving code/config extraction
 - Other supported formats through Apache Tika fallback
 
 Each chunk stores:
@@ -146,6 +150,9 @@ Each chunk stores:
 - chunk index
 - token estimate
 - content hash
+- document type
+- language
+- topic
 - parser metadata
 
 OCR is represented as a safe placeholder: scanned PDFs fail with a clear OCR-required message instead of silently indexing empty text.
@@ -212,14 +219,15 @@ url.trafilatura.timeout=20s
 1. Pull the latest `specile-features` branch.
 2. Restart the backend so Hibernate can add the new metadata columns.
 3. If old local H2 data causes schema conflicts, stop the app and delete `backend/data`.
-4. Confirm Ollama models exist:
+4. Re-upload or re-index older documents if you want the new `documentType`, `language`, `topic`, and code-aware chunk metadata on existing content.
+5. Confirm Ollama models exist:
 
 ```bash
 ollama pull phi3:mini
 ollama pull nomic-embed-text
 ```
 
-5. Confirm ChromaDB V2 heartbeat:
+6. Confirm ChromaDB V2 heartbeat:
 
 ```bash
 docker compose up -d chromadb

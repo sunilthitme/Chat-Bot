@@ -10,5 +10,7 @@ public interface ChatMessageRepository extends JpaRepository<ChatMessage, Long> 
 
     List<ChatMessage> findTop12BySessionIdOrderByCreatedAtDesc(String sessionId);
 
+    List<ChatMessage> findBySessionIdOrderByCreatedAtDesc(String sessionId, Pageable pageable);
+
     List<ChatMessage> findBySessionIdOrderByCreatedAtAsc(String sessionId, Pageable pageable);
 }

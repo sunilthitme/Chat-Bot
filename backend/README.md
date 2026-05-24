@@ -24,7 +24,8 @@ Chat requests always check the internal database first.
 - If Ollama is unavailable, the service falls back to the DB answer or the default not-found message.
 - If private mode is enabled, messages and embeddings are not persisted.
 - Chat requests never fetch URLs, parse raw HTML, or regenerate document embeddings.
-- RAG retrieves 10 vector candidates, reranks them against the question, and sends only the best 3 chunks to Ollama.
+- RAG retrieves Chroma and local hybrid candidates, reranks them against the question, and sends only the best 5 chunks to Ollama.
+- Code and Spring Boot questions receive metadata boosts for Java, API, controller, service, and configuration chunks.
 - The prompt instructs Ollama to answer only from the DB answer and retrieved chunks. Missing context returns `Information not found in the indexed knowledge.`
 
 ## Ask API
@@ -54,12 +55,12 @@ POST http://localhost:8080/api/ingest/url
 GET  http://localhost:8080/api/ingest/status?sessionId={sessionId}
 ```
 
-Supported upload types: PDF, DOCX, TXT, LOG, CSV, plus Apache Tika fallback for other readable office/text formats.
+Supported upload types: PDF, DOCX, TXT, LOG, CSV, Java, XML, properties, YAML, JSON, plus Apache Tika fallback for other readable office/text formats.
 URL ingestion accepts public HTTP/HTTPS sites, follows redirects, reads sitemaps, crawls same-host links, and blocks private/local hosts by default with `url.block-private-hosts=true`.
 HTML extraction uses Readability4J first, then Boilerpipe, Apache Tika, structured Jsoup cleanup, and an optional Trafilatura CLI fallback when `url.trafilatura.enabled=true`.
 Chat responses do not expose retrieved source metadata to the frontend.
 
-Document upload and `POST /api/ingest/url` return immediately with a queued status. The background ingestion executor extracts content, cleans it, chunks it with `rag.chunk-size=800` and `rag.chunk-overlap=150`, embeds once, stores vectors, then generates a concise summary. The frontend polls `/api/ingest/status` and blocks questions until indexing reaches `COMPLETED`, `NO_EMBEDDINGS`, or `FAILED`. Chat then uses similarity search only.
+Document upload and `POST /api/ingest/url` return immediately with a queued status. The background ingestion executor extracts content, cleans it, chunks it with `rag.chunk-size=800` and `rag.chunk-overlap=150`, embeds once, stores vectors, then generates a concise summary. Java and config files use syntax-preserving code chunking around classes, annotations, methods, endpoints, and configuration entries. The frontend polls `/api/ingest/status` and blocks questions until indexing reaches `COMPLETED`, `NO_EMBEDDINGS`, or `FAILED`. Chat then uses hybrid similarity and keyword search only.
 
 ## ChromaDB
 

@@ -293,6 +293,10 @@ public class UrlReaderService {
         metadata.put("pageCount", String.valueOf(pages.size()));
         metadata.put("crawler", "jsoup-recursive");
         metadata.put("allowList", "disabled");
+        metadata.put("documentType", "web");
+        metadata.put("language", "text");
+        metadata.put("topic", inferTopic(rootUri, pages));
+        metadata.put("source", rootUri.toString());
         return new ExtractedDocument(
                 rootUri.toString(),
                 "url",
@@ -348,6 +352,23 @@ public class UrlReaderService {
 
     private String defaultIfBlank(String value, String fallback) {
         return value == null || value.isBlank() ? fallback : value;
+    }
+
+    private String inferTopic(URI rootUri, List<ExtractedPage> pages) {
+        StringBuilder text = new StringBuilder(rootUri == null ? "" : rootUri.toString().toLowerCase());
+        pages.stream()
+                .map(ExtractedPage::sectionTitle)
+                .filter(title -> title != null && !title.isBlank())
+                .limit(8)
+                .forEach(title -> text.append(' ').append(title.toLowerCase()));
+        String normalized = text.toString();
+        if (normalized.contains("spring") || normalized.contains("boot") || normalized.contains("java")) {
+            return "spring-boot";
+        }
+        if (normalized.contains("api") || normalized.contains("rest") || normalized.contains("documentation")) {
+            return "api";
+        }
+        return "web";
     }
 
     private long elapsedMillis(long startedAt) {

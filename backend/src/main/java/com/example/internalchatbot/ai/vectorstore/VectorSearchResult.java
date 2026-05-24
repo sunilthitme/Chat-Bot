@@ -7,6 +7,9 @@ public record VectorSearchResult(
         String sourceUrl,
         Integer pageNumber,
         String sectionTitle,
+        String documentType,
+        String language,
+        String topic,
         String content,
         double score
 ) {

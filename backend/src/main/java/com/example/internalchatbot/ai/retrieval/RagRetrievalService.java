@@ -1,6 +1,7 @@
 package com.example.internalchatbot.ai.retrieval;
 
 import com.example.internalchatbot.ai.embeddings.EmbeddingService;
+import com.example.internalchatbot.ai.vectorstore.RetrievalFilter;
 import com.example.internalchatbot.ai.vectorstore.VectorSearchResult;
 import com.example.internalchatbot.ai.vectorstore.VectorStoreService;
 import org.slf4j.Logger;
@@ -44,16 +45,23 @@ public class RagRetrievalService {
         this.minScore = minScore;
     }
 
-    public List<VectorSearchResult> retrieve(String retrievalQuestion, boolean privateMode) {
+    public List<VectorSearchResult> retrieve(String sessionId, String retrievalQuestion, boolean privateMode) {
         if (privateMode || retrievalQuestion == null || retrievalQuestion.isBlank()) {
             return List.of();
         }
 
         try {
             List<Double> queryVector = embeddingService.embed(retrievalQuestion);
-            List<VectorSearchResult> candidates = vectorStoreService.search(retrievalQuestion, queryVector, candidateTopK);
+            RetrievalFilter filter = inferFilter(retrievalQuestion);
+            List<VectorSearchResult> candidates = vectorStoreService.search(
+                    sessionId,
+                    retrievalQuestion,
+                    queryVector,
+                    candidateTopK,
+                    filter
+            );
             List<VectorSearchResult> reranked = rerank(retrievalQuestion, candidates);
-            log.debug("RAG reranked candidates={} selected={}", candidates.size(), reranked.size());
+            log.debug("RAG reranked candidates={} selected={} filter={}", candidates.size(), reranked.size(), filter);
             return reranked;
         } catch (RuntimeException ex) {
             log.warn("RAG retrieval skipped because embedding generation or vector search failed.", ex);
@@ -94,7 +102,8 @@ public class RagRetrievalService {
         double lexicalScore = lexicalOverlap(queryTokens, content);
         double sectionScore = lexicalOverlap(queryTokens, section);
         double phraseBoost = exactPhraseBoost(question, content);
-        return (result.score() * 0.70) + (lexicalScore * 0.25) + (sectionScore * 0.10) + phraseBoost;
+        double codeBoost = codeIntentBoost(question, result);
+        return (result.score() * 0.65) + (lexicalScore * 0.30) + (sectionScore * 0.12) + phraseBoost + codeBoost;
     }
 
     private double lexicalOverlap(Set<String> queryTokens, String content) {
@@ -113,6 +122,58 @@ public class RagRetrievalService {
             return 0;
         }
         return content.contains(normalizedQuestion) ? 0.15 : 0;
+    }
+
+    private RetrievalFilter inferFilter(String question) {
+        String normalized = normalize(question);
+        Set<String> documentTypes = new LinkedHashSet<>();
+        Set<String> languages = new LinkedHashSet<>();
+        Set<String> topics = new LinkedHashSet<>();
+
+        if (containsAny(normalized, "code", "java", "class", "method", "api logic", "configuration", "controller", "service")) {
+            documentTypes.add("code");
+        }
+        if (containsAny(normalized, "java", "spring", "boot", "controller", "service", "repository", "bean")) {
+            languages.add("java");
+            topics.add("spring-boot");
+        }
+        if (containsAny(normalized, "application properties", "application yml", "yaml", "configuration", "config")) {
+            languages.add("properties");
+            languages.add("yaml");
+            topics.add("spring-boot");
+        }
+        if (containsAny(normalized, "api", "endpoint", "controller", "requestmapping", "getmapping", "postmapping")) {
+            topics.add("api");
+        }
+
+        return new RetrievalFilter(documentTypes, languages, topics);
+    }
+
+    private double codeIntentBoost(String question, VectorSearchResult result) {
+        String normalizedQuestion = normalize(question);
+        if (!containsAny(normalizedQuestion, "code", "java", "class", "method", "api", "configuration", "controller")) {
+            return 0;
+        }
+        double boost = 0;
+        if ("code".equals(normalize(result.documentType()))) {
+            boost += 0.10;
+        }
+        if ("java".equals(normalize(result.language()))) {
+            boost += 0.10;
+        }
+        if (normalize(result.content()).contains("public ") || normalize(result.content()).contains("@restcontroller")) {
+            boost += 0.06;
+        }
+        return boost;
+    }
+
+    private boolean containsAny(String text, String... needles) {
+        for (String needle : needles) {
+            if (text.contains(needle)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private Set<String> tokenize(String text) {
@@ -140,6 +201,9 @@ public class RagRetrievalService {
                     result.sourceUrl(),
                     result.pageNumber(),
                     result.sectionTitle(),
+                    result.documentType(),
+                    result.language(),
+                    result.topic(),
                     result.content(),
                     score
             );

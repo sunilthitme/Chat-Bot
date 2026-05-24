@@ -12,6 +12,15 @@ export interface ChatRequest {
 export interface ChatResponse {
   reply: string;
   privateMode: boolean;
+  sources: SourceReference[];
+}
+
+export interface SourceReference {
+  title: string;
+  documentType: string;
+  pageNumber?: number;
+  sectionTitle: string;
+  relevance: number;
 }
 
 export interface ChatSession {

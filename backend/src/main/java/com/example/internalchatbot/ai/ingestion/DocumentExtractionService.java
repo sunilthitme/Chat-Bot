@@ -67,6 +67,7 @@ public class DocumentExtractionService {
             case "docx" -> extractDocx(filename, contentType, bytes);
             case "csv" -> extractCsv(filename, contentType, bytes);
             case "txt", "log" -> extractText(filename, contentType, bytes, extension);
+            case "java", "xml", "yml", "yaml", "properties", "json" -> extractCode(filename, contentType, bytes, extension);
             default -> extractWithTika(filename, contentType, bytes, "tika-fallback");
         };
     }
@@ -175,6 +176,25 @@ public class DocumentExtractionService {
         return toDocument(filename, "file", null, contentType, parserName, Map.of(), pages);
     }
 
+    private ExtractedDocument extractCode(String filename, String contentType, byte[] bytes, String extension) {
+        String text = textNormalizer.normalize(new String(bytes, StandardCharsets.UTF_8));
+        Map<String, String> metadata = new LinkedHashMap<>();
+        metadata.put("documentType", "code");
+        metadata.put("language", codeLanguage(extension));
+        metadata.put("topic", inferTopic(filename));
+        metadata.put("filename", filename);
+        metadata.put("source", filename);
+        return toDocument(
+                filename,
+                "file",
+                null,
+                contentType == null ? codeContentType(extension) : contentType,
+                "code-aware-" + extension,
+                metadata,
+                splitCodeIntoSections(text, extension)
+        );
+    }
+
     private ExtractedDocument extractWithTika(String filename, String contentType, byte[] bytes, String parserName) {
         try {
             Metadata metadata = new Metadata();
@@ -210,6 +230,7 @@ public class DocumentExtractionService {
         String combinedText = cleanedPages.stream()
                 .map(ExtractedPage::text)
                 .collect(Collectors.joining("\n\n"));
+        Map<String, String> enrichedMetadata = enrichMetadata(sourceName, sourceType, mediaType, metadata, cleanedPages);
         return new ExtractedDocument(
                 sourceName,
                 sourceType,
@@ -217,9 +238,25 @@ public class DocumentExtractionService {
                 mediaType == null ? "application/octet-stream" : mediaType,
                 parserName,
                 ContentHash.sha256(textNormalizer.compact(combinedText)),
-                metadata,
+                enrichedMetadata,
                 cleanedPages
         );
+    }
+
+    private Map<String, String> enrichMetadata(
+            String sourceName,
+            String sourceType,
+            String mediaType,
+            Map<String, String> metadata,
+            List<ExtractedPage> pages
+    ) {
+        Map<String, String> enriched = new LinkedHashMap<>(metadata);
+        enriched.putIfAbsent("filename", sourceName);
+        enriched.putIfAbsent("source", sourceName);
+        enriched.putIfAbsent("documentType", inferDocumentType(sourceName, sourceType, mediaType));
+        enriched.putIfAbsent("language", inferLanguage(sourceName, enriched.get("documentType")));
+        enriched.putIfAbsent("topic", inferTopic(sourceName, pages));
+        return enriched;
     }
 
     private List<ExtractedPage> splitLongTextIntoPages(String text, String parserName) {
@@ -246,6 +283,47 @@ public class DocumentExtractionService {
         return pages;
     }
 
+    private List<ExtractedPage> splitCodeIntoSections(String text, String extension) {
+        if (text == null || text.isBlank()) {
+            return List.of();
+        }
+
+        List<ExtractedPage> pages = new ArrayList<>();
+        StringBuilder current = new StringBuilder();
+        String currentTitle = "Code";
+        int page = 1;
+        for (String line : text.split("\\R", -1)) {
+            String trimmed = line.trim();
+            boolean boundary = isCodeBoundary(trimmed, extension);
+            if (boundary && current.length() > 0) {
+                page = flushCodeSection(pages, page, currentTitle, current, extension);
+                currentTitle = codeTitle(trimmed);
+            } else if (boundary && current.length() == 0) {
+                currentTitle = codeTitle(trimmed);
+            }
+
+            if (current.length() + line.length() > TEXT_PAGE_SIZE && current.length() > 0) {
+                page = flushCodeSection(pages, page, currentTitle, current, extension);
+            }
+            current.append(line).append('\n');
+        }
+        flushCodeSection(pages, page, currentTitle, current, extension);
+        return pages;
+    }
+
+    private int flushCodeSection(List<ExtractedPage> pages, int page, String title, StringBuilder sectionText, String extension) {
+        String text = textNormalizer.normalize(sectionText.toString());
+        if (!text.isBlank()) {
+            pages.add(new ExtractedPage(page++, title, text, Map.of(
+                    "parser", "code-aware",
+                    "language", codeLanguage(extension),
+                    "sectionTitle", title
+            )));
+        }
+        sectionText.setLength(0);
+        return page;
+    }
+
     private String formatCsvRow(List<String> headers, CSVRecord record, int rowIndex) {
         if (headers.isEmpty()) {
             List<String> values = new ArrayList<>();
@@ -264,6 +342,111 @@ public class DocumentExtractionService {
         return style.contains("heading")
                 || style.contains("title")
                 || (text.length() <= 120 && text.equals(text.toUpperCase(Locale.ROOT)) && text.matches(".*[A-Z].*"));
+    }
+
+    private boolean isCodeBoundary(String line, String extension) {
+        if (line == null || line.isBlank()) {
+            return false;
+        }
+        if ("java".equals(extension)) {
+            return line.startsWith("@")
+                    || line.matches("(?i).*(class|interface|enum|record)\\s+[A-Za-z0-9_]+.*")
+                    || line.matches("(?i).*(public|private|protected)\\s+.*\\([^;]*\\).*")
+                    || line.matches("(?i).*(@Bean|@GetMapping|@PostMapping|@PutMapping|@DeleteMapping|@RequestMapping).*");
+        }
+        return line.matches("^[A-Za-z0-9_.-]+\\s*[:=].*")
+                || line.startsWith("<bean")
+                || line.startsWith("<property")
+                || line.startsWith("{")
+                || line.startsWith("\"");
+    }
+
+    private String codeTitle(String line) {
+        String compact = line == null ? "" : line.replaceAll("\\s+", " ").trim();
+        if (compact.isBlank()) {
+            return "Code";
+        }
+        return compact.length() <= 160 ? compact : compact.substring(0, 157) + "...";
+    }
+
+    private String inferDocumentType(String sourceName, String sourceType, String mediaType) {
+        String name = sourceName == null ? "" : sourceName.toLowerCase(Locale.ROOT);
+        if (name.endsWith(".java") || name.endsWith(".xml") || name.endsWith(".properties")
+                || name.endsWith(".yml") || name.endsWith(".yaml") || name.endsWith(".json")) {
+            return "code";
+        }
+        if ("url".equalsIgnoreCase(sourceType)) {
+            return "web";
+        }
+        int dot = name.lastIndexOf('.');
+        if (dot >= 0) {
+            return name.substring(dot + 1);
+        }
+        return mediaType == null || mediaType.isBlank() ? sourceType : mediaType;
+    }
+
+    private String inferLanguage(String sourceName, String documentType) {
+        String name = sourceName == null ? "" : sourceName.toLowerCase(Locale.ROOT);
+        if (name.endsWith(".java")) {
+            return "java";
+        }
+        if (name.endsWith(".xml")) {
+            return "xml";
+        }
+        if (name.endsWith(".yml") || name.endsWith(".yaml")) {
+            return "yaml";
+        }
+        if (name.endsWith(".properties")) {
+            return "properties";
+        }
+        if (name.endsWith(".json")) {
+            return "json";
+        }
+        return "code".equalsIgnoreCase(documentType) ? "code" : "text";
+    }
+
+    private String inferTopic(String filename) {
+        return inferTopic(filename, List.of());
+    }
+
+    private String inferTopic(String sourceName, List<ExtractedPage> pages) {
+        StringBuilder text = new StringBuilder(sourceName == null ? "" : sourceName.toLowerCase(Locale.ROOT));
+        pages.stream()
+                .map(ExtractedPage::sectionTitle)
+                .filter(title -> title != null && !title.isBlank())
+                .limit(5)
+                .forEach(title -> text.append(' ').append(title.toLowerCase(Locale.ROOT)));
+        String normalized = text.toString();
+        if (normalized.contains("spring") || normalized.contains("boot") || normalized.contains("controller")
+                || normalized.contains("service") || normalized.contains("repository") || normalized.contains("configuration")) {
+            return "spring-boot";
+        }
+        if (normalized.contains("api") || normalized.contains("rest")) {
+            return "api";
+        }
+        if (normalized.contains("java")) {
+            return "java";
+        }
+        return "general";
+    }
+
+    private String codeLanguage(String extension) {
+        return switch (extension) {
+            case "yml", "yaml" -> "yaml";
+            case "properties" -> "properties";
+            default -> extension;
+        };
+    }
+
+    private String codeContentType(String extension) {
+        return switch (extension) {
+            case "java" -> "text/x-java-source";
+            case "xml" -> "application/xml";
+            case "yml", "yaml" -> "application/x-yaml";
+            case "properties" -> "text/x-java-properties";
+            case "json" -> "application/json";
+            default -> "text/plain";
+        };
     }
 
     private String detectSectionTitle(String text) {

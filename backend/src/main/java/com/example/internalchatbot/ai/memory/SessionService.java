@@ -104,7 +104,10 @@ public class SessionService {
     }
 
     public String memoryForSession(String sessionId, int maxChars) {
-        List<ChatMessage> messages = chatMessageRepository.findTop12BySessionIdOrderByCreatedAtDesc(sessionId);
+        List<ChatMessage> messages = chatMessageRepository.findBySessionIdOrderByCreatedAtDesc(
+                sessionId,
+                PageRequest.of(0, 20)
+        );
         StringBuilder memory = new StringBuilder();
         for (int index = messages.size() - 1; index >= 0; index--) {
             ChatMessage message = messages.get(index);

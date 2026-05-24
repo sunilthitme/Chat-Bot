@@ -10,6 +10,7 @@ import com.example.internalchatbot.ai.retrieval.RagRetrievalService;
 import com.example.internalchatbot.ai.vectorstore.VectorSearchResult;
 import com.example.internalchatbot.dto.ChatRequest;
 import com.example.internalchatbot.dto.ChatResponse;
+import com.example.internalchatbot.dto.SourceReferenceResponse;
 import com.example.internalchatbot.entity.ChatQuestion;
 import com.example.internalchatbot.entity.ChatSession;
 import org.slf4j.Logger;
@@ -100,7 +101,8 @@ public class AiOrchestratorService {
 
         return new ChatResponse(
                 reply,
-                prepared.privateMode()
+                prepared.privateMode(),
+                sourceReferences(prepared.retrievedKnowledge())
         );
     }
 
@@ -187,7 +189,7 @@ public class AiOrchestratorService {
         long dbMs = elapsedMillis(dbStartedAt);
 
         long ragStartedAt = System.nanoTime();
-        List<VectorSearchResult> retrievedKnowledge = ragRetrievalService.retrieve(retrievalQuestion, privateMode);
+        List<VectorSearchResult> retrievedKnowledge = ragRetrievalService.retrieve(session.getId(), retrievalQuestion, privateMode);
         long ragMs = elapsedMillis(ragStartedAt);
 
         String prompt = promptBuilder.buildChatPrompt(
@@ -308,7 +310,8 @@ public class AiOrchestratorService {
         );
         return new ChatResponse(
                 reply,
-                prepared.privateMode()
+                prepared.privateMode(),
+                sourceReferences(prepared.retrievedKnowledge())
         );
     }
 
@@ -329,6 +332,27 @@ public class AiOrchestratorService {
                 elapsedMillis(prepared.startedAt())
         );
         return response(prepared, NOT_FOUND_REPLY, llmStartedAt, stream);
+    }
+
+    private List<SourceReferenceResponse> sourceReferences(List<VectorSearchResult> retrievedKnowledge) {
+        Map<String, SourceReferenceResponse> references = new LinkedHashMap<>();
+        for (VectorSearchResult result : retrievedKnowledge) {
+            if (result.sourceName() == null || result.sourceName().isBlank()) {
+                continue;
+            }
+            String key = result.sourceName() + "|" + result.pageNumber() + "|" + result.sectionTitle();
+            references.putIfAbsent(key, new SourceReferenceResponse(
+                    result.sourceName(),
+                    defaultString(result.documentType()),
+                    result.pageNumber(),
+                    defaultString(result.sectionTitle()),
+                    Math.round(result.score() * 1000.0) / 1000.0
+            ));
+            if (references.size() >= 5) {
+                break;
+            }
+        }
+        return List.copyOf(references.values());
     }
 
     private ChatResponse indexingResponse(

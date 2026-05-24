@@ -70,6 +70,9 @@ create table embeddings_metadata (
     source_url varchar(600),
     page_number integer,
     section_title varchar(260),
+    document_type varchar(80),
+    language varchar(80),
+    topic varchar(160),
     chunk_index integer,
     token_estimate integer,
     content_hash varchar(64),
@@ -90,6 +93,7 @@ create index idx_embeddings_private_created on embeddings_metadata(private_mode,
 create index idx_embeddings_session_private on embeddings_metadata(session_id, private_mode);
 create index idx_embeddings_document on embeddings_metadata(document_id);
 create index idx_embeddings_hash on embeddings_metadata(content_hash);
+create index idx_embeddings_filter on embeddings_metadata(document_type, language, topic, private_mode);
 create index idx_uploaded_source_url_type_private on uploaded_documents(source_url, source_type, private_mode);
 create index idx_uploaded_session_status_private on uploaded_documents(session_id, ingestion_status, private_mode);
 create index idx_uploaded_status on uploaded_documents(ingestion_status);

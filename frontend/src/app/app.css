@@ -297,6 +297,37 @@
   color: inherit;
 }
 
+.source-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid #e2e8f0;
+}
+
+.source-label,
+.source-chip {
+  min-height: 24px;
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  padding: 0 9px;
+  font-size: 12px;
+}
+
+.source-label {
+  background: #e2e8f0;
+  color: #475569;
+  font-weight: 700;
+}
+
+.source-chip {
+  background: #ecfeff;
+  color: #155e75;
+  border: 1px solid #bae6fd;
+}
+
 .bot-row .message-bubble {
   background: #ffffff;
   border: 1px solid #d9e1ea;
@@ -376,6 +407,21 @@ textarea:disabled {
   background: #1f2937;
   border-color: #334155;
   color: #e2e8f0;
+}
+
+.app-shell.dark .source-list {
+  border-color: #334155;
+}
+
+.app-shell.dark .source-label {
+  background: #334155;
+  color: #cbd5e1;
+}
+
+.app-shell.dark .source-chip {
+  background: #164e63;
+  border-color: #0e7490;
+  color: #cffafe;
 }
 
 .app-shell.dark .url-form input,

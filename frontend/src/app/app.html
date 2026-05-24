@@ -45,7 +45,7 @@
     <div class="tool-strip">
       <label class="upload-button" [class.disabled]="isLoading() || indexingActive()">
         Upload
-        <input type="file" accept=".pdf,.docx,.txt,.log,.csv" (change)="uploadDocument($event)" [disabled]="isLoading() || indexingActive()" hidden>
+        <input type="file" accept=".pdf,.docx,.txt,.log,.csv,.java,.xml,.properties,.yml,.yaml,.json" (change)="uploadDocument($event)" [disabled]="isLoading() || indexingActive()" hidden>
       </label>
       <div *ngIf="uploadProgress() > 0" class="upload-progress">
         <span [style.width.%]="uploadProgress()"></span>
@@ -80,6 +80,12 @@
       >
         <div class="message-bubble">
           <div class="message-content" [innerHTML]="renderMarkdown(message.text)"></div>
+          <div *ngIf="message.sources?.length" class="source-list">
+            <span class="source-label">Sources</span>
+            <span *ngFor="let source of message.sources" class="source-chip">
+              {{ source.title }}<ng-container *ngIf="source.pageNumber"> p.{{ source.pageNumber }}</ng-container>
+            </span>
+          </div>
         </div>
       </div>
 

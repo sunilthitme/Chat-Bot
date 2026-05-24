@@ -19,7 +19,8 @@ import java.time.Instant;
                 @Index(name = "idx_embeddings_private_created", columnList = "private_mode, created_at"),
                 @Index(name = "idx_embeddings_session_private", columnList = "session_id, private_mode"),
                 @Index(name = "idx_embeddings_document", columnList = "document_id"),
-                @Index(name = "idx_embeddings_hash", columnList = "content_hash")
+                @Index(name = "idx_embeddings_hash", columnList = "content_hash"),
+                @Index(name = "idx_embeddings_filter", columnList = "document_type, language, topic, private_mode")
         }
 )
 public class EmbeddingMetadata {
@@ -49,6 +50,15 @@ public class EmbeddingMetadata {
 
     @Column(length = 260)
     private String sectionTitle;
+
+    @Column(length = 80)
+    private String documentType;
+
+    @Column(length = 80)
+    private String language;
+
+    @Column(length = 160)
+    private String topic;
 
     private Integer chunkIndex;
 
@@ -147,6 +157,30 @@ public class EmbeddingMetadata {
 
     public void setSectionTitle(String sectionTitle) {
         this.sectionTitle = sectionTitle;
+    }
+
+    public String getDocumentType() {
+        return documentType;
+    }
+
+    public void setDocumentType(String documentType) {
+        this.documentType = documentType;
+    }
+
+    public String getLanguage() {
+        return language;
+    }
+
+    public void setLanguage(String language) {
+        this.language = language;
+    }
+
+    public String getTopic() {
+        return topic;
+    }
+
+    public void setTopic(String topic) {
+        this.topic = topic;
     }
 
     public Integer getChunkIndex() {
