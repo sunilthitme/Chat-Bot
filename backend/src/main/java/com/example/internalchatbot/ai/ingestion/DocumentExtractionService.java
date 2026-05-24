@@ -371,6 +371,9 @@ public class DocumentExtractionService {
 
     private String inferDocumentType(String sourceName, String sourceType, String mediaType) {
         String name = sourceName == null ? "" : sourceName.toLowerCase(Locale.ROOT);
+        if (name.contains("resume") || name.contains("_cv") || name.endsWith("cv.pdf") || name.endsWith("cv.docx")) {
+            return "resume";
+        }
         if (name.endsWith(".java") || name.endsWith(".xml") || name.endsWith(".properties")
                 || name.endsWith(".yml") || name.endsWith(".yaml") || name.endsWith(".json")) {
             return "code";
@@ -417,8 +420,12 @@ public class DocumentExtractionService {
                 .limit(5)
                 .forEach(title -> text.append(' ').append(title.toLowerCase(Locale.ROOT)));
         String normalized = text.toString();
+        if (normalized.contains("resume") || normalized.contains("curriculum vitae") || normalized.contains("education")
+                || normalized.contains("experience") || normalized.contains("skills")) {
+            return "resume";
+        }
         if (normalized.contains("spring") || normalized.contains("boot") || normalized.contains("controller")
-                || normalized.contains("service") || normalized.contains("repository") || normalized.contains("configuration")) {
+                || normalized.contains("repository") || normalized.contains("configuration")) {
             return "spring-boot";
         }
         if (normalized.contains("api") || normalized.contains("rest")) {

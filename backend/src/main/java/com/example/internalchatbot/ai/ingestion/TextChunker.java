@@ -51,17 +51,20 @@ public class TextChunker {
             String language = metadataValue(baseMetadata, "language", inferLanguage(documentType, document.sourceName()));
             String topic = metadataValue(baseMetadata, "topic", inferTopic(document.sourceName(), page.sectionTitle()));
             boolean code = isCode(documentType, language);
+            boolean resume = isResume(documentType, document.sourceName(), page.text());
 
-            for (ChunkPiece piece : chunkPage(page.text(), page.sectionTitle(), code)) {
+            for (ChunkPiece piece : chunkPage(page.text(), page.sectionTitle(), code, resume)) {
                 String normalized = code ? textNormalizer.normalize(piece.text()) : textNormalizer.compact(piece.text());
                 if (normalized.isBlank()) {
                     continue;
                 }
+                String effectiveDocumentType = resume ? "resume" : documentType;
+                String effectiveTopic = resume ? resumeTopic(piece.sectionTitle(), topic) : topic;
                 Map<String, String> metadata = new LinkedHashMap<>(baseMetadata);
                 metadata.put("chunkIndex", String.valueOf(chunkIndex));
-                metadata.put("documentType", documentType);
+                metadata.put("documentType", effectiveDocumentType);
                 metadata.put("language", language);
-                metadata.put("topic", topic);
+                metadata.put("topic", effectiveTopic);
                 chunks.add(new DocumentChunk(
                         normalized,
                         document.sourceName(),
@@ -69,9 +72,9 @@ public class TextChunker {
                         document.sourceUrl(),
                         page.pageNumber(),
                         defaultIfBlank(piece.sectionTitle(), page.sectionTitle()),
-                        documentType,
+                        effectiveDocumentType,
                         language,
-                        topic,
+                        effectiveTopic,
                         chunkIndex++,
                         estimateTokens(normalized),
                         ContentHash.sha256(normalized),
@@ -82,13 +85,78 @@ public class TextChunker {
         return chunks;
     }
 
-    private List<ChunkPiece> chunkPage(String text, String sectionTitle, boolean code) {
+    private List<ChunkPiece> chunkPage(String text, String sectionTitle, boolean code, boolean resume) {
         if (code) {
             return chunkCode(text, sectionTitle);
+        }
+        if (resume) {
+            return chunkResume(text, sectionTitle);
         }
         return chunkText(text).stream()
                 .map(chunk -> new ChunkPiece(chunk, sectionTitle))
                 .toList();
+    }
+
+    private List<ChunkPiece> chunkResume(String rawText, String defaultTitle) {
+        String text = textNormalizer.normalize(rawText);
+        if (text.isBlank()) {
+            return List.of();
+        }
+        List<ChunkPiece> pieces = new ArrayList<>();
+        StringBuilder current = new StringBuilder();
+        String currentTitle = defaultIfBlank(defaultTitle, "Resume");
+        for (String line : text.split("\\R")) {
+            String trimmed = line.trim();
+            String section = resumeSection(trimmed);
+            if (section != null && current.length() > 0) {
+                flushResumePiece(pieces, current, currentTitle);
+                currentTitle = section;
+            } else if (section != null) {
+                currentTitle = section;
+            }
+            if (current.length() + line.length() + 1 > chunkSize + overlap && current.length() > 0) {
+                flushResumePiece(pieces, current, currentTitle);
+            }
+            current.append(line).append('\n');
+        }
+        flushResumePiece(pieces, current, currentTitle);
+        return addResumeOverlap(pieces);
+    }
+
+    private void flushResumePiece(List<ChunkPiece> pieces, StringBuilder current, String title) {
+        String chunk = textNormalizer.compact(current.toString());
+        if (!chunk.isBlank()) {
+            pieces.add(new ChunkPiece(chunk, title));
+        }
+        current.setLength(0);
+    }
+
+    private List<ChunkPiece> addResumeOverlap(List<ChunkPiece> pieces) {
+        if (pieces.size() <= 1 || overlap == 0) {
+            return pieces;
+        }
+        List<ChunkPiece> withOverlap = new ArrayList<>();
+        String previous = "";
+        for (ChunkPiece piece : pieces) {
+            String prefix = previous.length() <= overlap ? previous : previous.substring(previous.length() - overlap);
+            String merged = prefix.isBlank() ? piece.text() : prefix + " " + piece.text();
+            withOverlap.add(new ChunkPiece(textNormalizer.compact(trimToChunkWindow(merged)), piece.sectionTitle()));
+            previous = piece.text();
+        }
+        return withOverlap;
+    }
+
+    private String resumeSection(String line) {
+        String normalized = normalizeLabel(line).replaceAll("[^a-z ]", "").trim();
+        return switch (normalized) {
+            case "education", "educational qualification", "academic qualification", "academics" -> "Education";
+            case "experience", "work experience", "professional experience", "employment history" -> "Experience";
+            case "skills", "technical skills", "key skills", "core skills" -> "Skills";
+            case "certification", "certifications", "certificates" -> "Certifications";
+            case "projects", "project experience", "project details" -> "Projects";
+            case "summary", "profile summary", "professional summary" -> "Summary";
+            default -> null;
+        };
     }
 
     private List<String> chunkText(String rawText) {
@@ -261,8 +329,22 @@ public class TextChunker {
                 || "json".equals(normalizedLanguage);
     }
 
+    private boolean isResume(String documentType, String sourceName, String text) {
+        String name = normalizeLabel(sourceName);
+        String normalizedText = text == null ? "" : text.toLowerCase(Locale.ROOT);
+        return "resume".equals(normalizeLabel(documentType))
+                || name.contains("resume")
+                || name.contains("_cv")
+                || normalizedText.contains("education")
+                && normalizedText.contains("experience")
+                && normalizedText.contains("skills");
+    }
+
     private String inferDocumentType(ExtractedDocument document) {
         String sourceName = document.sourceName() == null ? "" : document.sourceName().toLowerCase(Locale.ROOT);
+        if (sourceName.contains("resume") || sourceName.contains("_cv") || sourceName.endsWith("cv.pdf") || sourceName.endsWith("cv.docx")) {
+            return "resume";
+        }
         if (sourceName.endsWith(".java") || sourceName.endsWith(".xml") || sourceName.endsWith(".properties")
                 || sourceName.endsWith(".yml") || sourceName.endsWith(".yaml") || sourceName.endsWith(".json")) {
             return "code";
@@ -296,8 +378,11 @@ public class TextChunker {
 
     private String inferTopic(String sourceName, String sectionTitle) {
         String text = (defaultIfBlank(sourceName, "") + " " + defaultIfBlank(sectionTitle, "")).toLowerCase(Locale.ROOT);
+        if (text.contains("resume") || text.contains("education") || text.contains("experience") || text.contains("skills")) {
+            return "resume";
+        }
         if (text.contains("spring") || text.contains("boot") || text.contains("controller")
-                || text.contains("service") || text.contains("repository") || text.contains("configuration")) {
+                || text.contains("repository") || text.contains("configuration")) {
             return "spring-boot";
         }
         if (text.contains("api") || text.contains("rest")) {
@@ -320,6 +405,26 @@ public class TextChunker {
 
     private String normalizeLabel(String value) {
         return value == null ? "" : value.trim().toLowerCase(Locale.ROOT);
+    }
+
+    private String resumeTopic(String sectionTitle, String fallback) {
+        String section = normalizeLabel(sectionTitle);
+        if (section.contains("education")) {
+            return "education";
+        }
+        if (section.contains("experience")) {
+            return "experience";
+        }
+        if (section.contains("skill")) {
+            return "skills";
+        }
+        if (section.contains("certification")) {
+            return "certifications";
+        }
+        if (section.contains("project")) {
+            return "projects";
+        }
+        return "resume".equals(fallback) ? fallback : "resume";
     }
 
     private int estimateTokens(String text) {

@@ -5,10 +5,19 @@ import java.util.Set;
 public record RetrievalFilter(
         Set<String> documentTypes,
         Set<String> languages,
-        Set<String> topics
+        Set<String> topics,
+        boolean enforce
 ) {
     public static RetrievalFilter none() {
-        return new RetrievalFilter(Set.of(), Set.of(), Set.of());
+        return new RetrievalFilter(Set.of(), Set.of(), Set.of(), false);
+    }
+
+    public static RetrievalFilter boostOnly(Set<String> documentTypes, Set<String> languages, Set<String> topics) {
+        return new RetrievalFilter(documentTypes, languages, topics, false);
+    }
+
+    public static RetrievalFilter enforced(Set<String> documentTypes, Set<String> languages, Set<String> topics) {
+        return new RetrievalFilter(documentTypes, languages, topics, true);
     }
 
     public boolean empty() {

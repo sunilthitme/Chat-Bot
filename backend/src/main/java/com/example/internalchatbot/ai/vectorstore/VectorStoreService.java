@@ -184,6 +184,10 @@ public class VectorStoreService {
         }
         List<EmbeddingMetadata> localCandidates = localCandidates(sessionId, userKey, activeDocumentId);
         for (EmbeddingMetadata metadata : localCandidates) {
+            if (filter != null && filter.enforce()
+                    && !filter.matches(metadata.getDocumentType(), metadata.getLanguage(), metadata.getTopic())) {
+                continue;
+            }
             putBest(merged, toSearchResult(metadata, queryVector, queryText, sessionId, filter));
         }
         log.info(

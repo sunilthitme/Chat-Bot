@@ -193,6 +193,7 @@ public class AiOrchestratorService {
                 session.getId(),
                 session.getUserKey(),
                 session.getActiveDocumentId(),
+                message,
                 retrievalQuestion,
                 privateMode
         );

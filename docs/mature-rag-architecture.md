@@ -146,10 +146,28 @@ The prompt contains:
 
 The LLM is instructed to answer only from grounded context and return `Information not found in the indexed knowledge.` when retrieval does not support the answer.
 
+## Query Intent And Fallbacks
+
+`QueryIntentClassifier` classifies only the current user question, not the expanded memory query. This prevents resume questions from inheriting unrelated Java/Spring tokens from earlier chat memory.
+
+Metadata filters are applied only when the intent confidence crosses `rag.intent-filter-threshold`. The retrieval flow is:
+
+```text
+Classify current question
+-> if confidence is high, apply metadata filter
+-> rerank
+-> if top score < rag.low-confidence-score, retry without metadata filters
+-> if still weak, retry as keyword-hybrid with boost-only metadata
+```
+
+Resume documents are tagged as `documentType=resume` and chunked by sections such as Education, Experience, Skills, Certifications, and Projects. This keeps factual resume questions, for example "When did Sachin complete bachelor degree?", near education chunks instead of older web/code chunks.
+
 ## Production Best Practices
 
 - Keep ingestion and chat flows separate.
 - Treat active uploaded documents as the first retrieval scope to prevent unrelated global pages from winning.
+- Keep query intent filters confidence-gated; do not infer code/Spring intent from generic words such as "service".
+- Keep prompt context small; default top-k is 3, max context is 2200 characters, and generation is capped with `ollama.num-predict=256`.
 - Never reread uploaded documents during chat.
 - Never regenerate document embeddings during chat.
 - Use ChromaDB for vector search and local metadata as a resilient hybrid index.

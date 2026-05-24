@@ -27,32 +27,42 @@ public class RagRetrievalService {
 
     private final EmbeddingService embeddingService;
     private final VectorStoreService vectorStoreService;
+    private final QueryIntentClassifier queryIntentClassifier;
     private final int topK;
     private final int candidateTopK;
     private final double minScore;
+    private final double intentFilterThreshold;
+    private final double lowConfidenceScore;
 
     public RagRetrievalService(
             EmbeddingService embeddingService,
             VectorStoreService vectorStoreService,
+            QueryIntentClassifier queryIntentClassifier,
             @Value("${rag.top-k:3}") int topK,
             @Value("${rag.candidate-top-k:10}") int candidateTopK,
-            @Value("${rag.min-score:0.20}") double minScore
+            @Value("${rag.min-score:0.20}") double minScore,
+            @Value("${rag.intent-filter-threshold:0.72}") double intentFilterThreshold,
+            @Value("${rag.low-confidence-score:0.75}") double lowConfidenceScore
     ) {
         this.embeddingService = embeddingService;
         this.vectorStoreService = vectorStoreService;
+        this.queryIntentClassifier = queryIntentClassifier;
         this.topK = Math.max(1, Math.min(topK, 10));
         this.candidateTopK = Math.max(this.topK, Math.min(candidateTopK, 50));
         this.minScore = minScore;
+        this.intentFilterThreshold = Math.max(0.1, Math.min(intentFilterThreshold, 0.99));
+        this.lowConfidenceScore = Math.max(0.1, Math.min(lowConfidenceScore, 0.99));
     }
 
     public List<VectorSearchResult> retrieve(String sessionId, String retrievalQuestion, boolean privateMode) {
-        return retrieve(sessionId, null, null, retrievalQuestion, privateMode);
+        return retrieve(sessionId, null, null, retrievalQuestion, retrievalQuestion, privateMode);
     }
 
     public List<VectorSearchResult> retrieve(
             String sessionId,
             String userKey,
             Long activeDocumentId,
+            String userQuestion,
             String retrievalQuestion,
             boolean privateMode
     ) {
@@ -70,8 +80,96 @@ public class RagRetrievalService {
                     retrievalQuestion.length(),
                     queryVector.size()
             );
-            RetrievalFilter filter = inferFilter(retrievalQuestion);
-            List<VectorSearchResult> candidates = vectorStoreService.search(
+            QueryIntent intent = queryIntentClassifier.classify(userQuestion);
+            RetrievalFilter appliedFilter = intent.confident(intentFilterThreshold)
+                    ? RetrievalFilter.enforced(
+                            intent.filter().documentTypes(),
+                            intent.filter().languages(),
+                            intent.filter().topics()
+                    )
+                    : RetrievalFilter.none();
+            log.info(
+                    "rag query intent sessionId={} activeDocumentId={} intent={} confidence={} appliedFilter={}",
+                    safe(sessionId),
+                    activeDocumentId,
+                    intent.name(),
+                    round(intent.confidence()),
+                    appliedFilter
+            );
+
+            RetrievalAttempt attempt = retrieveWithRerank(
+                    "metadata-filtered",
+                    sessionId,
+                    userKey,
+                    activeDocumentId,
+                    retrievalQuestion,
+                    queryVector,
+                    appliedFilter
+            );
+
+            if (weak(attempt.results())) {
+                log.info(
+                        "rag fallback activated reason=low-confidence-semantic topScore={} threshold={} previousMode={}",
+                        topScore(attempt.results()),
+                        lowConfidenceScore,
+                        attempt.mode()
+                );
+                attempt = retrieveWithRerank(
+                        "semantic",
+                        sessionId,
+                        userKey,
+                        activeDocumentId,
+                        retrievalQuestion,
+                        queryVector,
+                        RetrievalFilter.none()
+                );
+            }
+
+            if (weak(attempt.results())) {
+                log.info(
+                        "rag fallback activated reason=keyword-hybrid topScore={} threshold={} previousMode={}",
+                        topScore(attempt.results()),
+                        lowConfidenceScore,
+                        attempt.mode()
+                );
+                attempt = retrieveWithRerank(
+                        "keyword-hybrid",
+                        sessionId,
+                        userKey,
+                        activeDocumentId,
+                        retrievalQuestion,
+                        queryVector,
+                        intent.filter()
+                );
+            }
+
+            log.info(
+                    "rag retrieval completed sessionId={} activeDocumentId={} mode={} candidates={} selected={} topScores={} totalMs={}",
+                    safe(sessionId),
+                    activeDocumentId,
+                    attempt.mode(),
+                    attempt.candidateCount(),
+                    attempt.results().size(),
+                    topScores(attempt.results()),
+                    elapsedMillis(startedAt)
+            );
+            return attempt.results();
+        } catch (RuntimeException ex) {
+            log.warn("RAG retrieval skipped because embedding generation or vector search failed.", ex);
+            return List.of();
+        }
+    }
+
+    private RetrievalAttempt retrieveWithRerank(
+            String mode,
+            String sessionId,
+            String userKey,
+            Long activeDocumentId,
+            String retrievalQuestion,
+            List<Double> queryVector,
+            RetrievalFilter filter
+    ) {
+        List<VectorSearchResult> candidates = vectorStoreService.search(
                     sessionId,
                     userKey,
                     activeDocumentId,
@@ -80,25 +178,11 @@ public class RagRetrievalService {
                     candidateTopK,
                     filter
             );
-            List<VectorSearchResult> reranked = rerank(retrievalQuestion, candidates);
-            log.info(
-                    "rag retrieval completed sessionId={} activeDocumentId={} candidates={} selected={} topScores={} filter={} totalMs={}",
-                    safe(sessionId),
-                    activeDocumentId,
-                    candidates.size(),
-                    reranked.size(),
-                    topScores(reranked),
-                    filter,
-                    elapsedMillis(startedAt)
-            );
-            return reranked;
-        } catch (RuntimeException ex) {
-            log.warn("RAG retrieval skipped because embedding generation or vector search failed.", ex);
-            return List.of();
-        }
+        List<VectorSearchResult> reranked = rerank(retrievalQuestion, candidates, mode);
+        return new RetrievalAttempt(mode, candidates.size(), reranked);
     }
 
-    private List<VectorSearchResult> rerank(String question, List<VectorSearchResult> candidates) {
+    private List<VectorSearchResult> rerank(String question, List<VectorSearchResult> candidates, String mode) {
         if (candidates.isEmpty()) {
             return List.of();
         }
@@ -108,6 +192,7 @@ public class RagRetrievalService {
                 .map(result -> new RankedResult(result, rerankScore(result, queryTokens, question)))
                 .sorted(Comparator.comparingDouble(RankedResult::score).reversed())
                 .toList();
+        log.info("rag reranking mode={} candidates={} scores={}", mode, candidates.size(), rankedScores(rankedResults));
 
         List<VectorSearchResult> filtered = rankedResults.stream()
                 .filter(result -> result.score() >= minScore)
@@ -151,31 +236,6 @@ public class RagRetrievalService {
             return 0;
         }
         return content.contains(normalizedQuestion) ? 0.15 : 0;
-    }
-
-    private RetrievalFilter inferFilter(String question) {
-        String normalized = normalize(question);
-        Set<String> documentTypes = new LinkedHashSet<>();
-        Set<String> languages = new LinkedHashSet<>();
-        Set<String> topics = new LinkedHashSet<>();
-
-        if (containsAny(normalized, "code", "java", "class", "method", "api logic", "configuration", "controller", "service")) {
-            documentTypes.add("code");
-        }
-        if (containsAny(normalized, "java", "spring", "boot", "controller", "service", "repository", "bean")) {
-            languages.add("java");
-            topics.add("spring-boot");
-        }
-        if (containsAny(normalized, "application properties", "application yml", "yaml", "configuration", "config")) {
-            languages.add("properties");
-            languages.add("yaml");
-            topics.add("spring-boot");
-        }
-        if (containsAny(normalized, "api", "endpoint", "controller", "requestmapping", "getmapping", "postmapping")) {
-            topics.add("api");
-        }
-
-        return new RetrievalFilter(documentTypes, languages, topics);
     }
 
     private double codeIntentBoost(String question, VectorSearchResult result) {
@@ -229,6 +289,29 @@ public class RagRetrievalService {
                 .toString();
     }
 
+    private String rankedScores(List<RankedResult> results) {
+        return results.stream()
+                .limit(8)
+                .map(result -> result.result().sourceName() + ":" + round(result.score()))
+                .toList()
+                .toString();
+    }
+
+    private boolean weak(List<VectorSearchResult> results) {
+        return results.isEmpty() || topScore(results) < lowConfidenceScore;
+    }
+
+    private double topScore(List<VectorSearchResult> results) {
+        return results.stream()
+                .mapToDouble(VectorSearchResult::score)
+                .max()
+                .orElse(0);
+    }
+
+    private double round(double value) {
+        return Math.round(value * 1000.0) / 1000.0;
+    }
+
     private long elapsedMillis(long startedAt) {
         return (System.nanoTime() - startedAt) / 1_000_000;
     }
@@ -256,5 +339,8 @@ public class RagRetrievalService {
                     score
             );
         }
+    }
+
+    private record RetrievalAttempt(String mode, int candidateCount, List<VectorSearchResult> results) {
     }
 }
