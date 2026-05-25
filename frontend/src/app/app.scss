@@ -84,7 +84,6 @@
   flex: 1;
 }
 
-.header-new-chat,
 .sidebar-new-chat,
 .chat-form button {
   --mdc-filled-button-container-color: var(--td-green-700);
@@ -97,20 +96,17 @@
   font-weight: 700;
 }
 
-.header-new-chat:hover,
 .sidebar-new-chat:hover,
 .chat-form button:hover {
   background: var(--td-green-800) !important;
 }
 
-.header-new-chat span,
 .sidebar-new-chat span {
   margin-right: 6px;
   font-size: 18px;
   line-height: 1;
 }
 
-.header-search,
 .sidebar-search {
   display: flex;
   align-items: center;
@@ -129,12 +125,6 @@
     background: transparent;
     font-size: 14px;
   }
-}
-
-.header-search {
-  width: min(320px, 32vw);
-  padding: 0 10px;
-  border-color: rgba(255, 255, 255, 0.24);
 }
 
 .sidebar-search {
@@ -185,14 +175,14 @@
   display: flex;
   align-items: center;
   gap: 0;
-  padding: 0 280px;
+  padding: 0 28px;
   background: var(--td-green-700);
 
   a {
     min-height: 44px;
     display: inline-flex;
     align-items: center;
-    padding: 0 22px;
+    padding: 0 26px;
     border-left: 1px solid rgba(255, 255, 255, 0.16);
     color: #ffffff;
     text-decoration: none;
@@ -755,10 +745,6 @@ input:disabled {
     flex-wrap: wrap;
   }
 
-  .header-search {
-    width: min(100%, 420px);
-  }
-
   .portal-nav {
     padding: 0 24px;
   }
@@ -825,9 +811,7 @@ input:disabled {
     display: grid;
   }
 
-  .session-pill,
-  .header-search,
-  .header-new-chat {
+  .session-pill {
     width: 100%;
     max-width: none;
   }

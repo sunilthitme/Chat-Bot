@@ -10,23 +10,6 @@
       </div>
 
       <div class="header-controls">
-        <button mat-flat-button type="button" class="header-new-chat" (click)="newChat()" [disabled]="isSidebarLoading() || indexingActive()">
-          <span aria-hidden="true">+</span>
-          New Chat
-        </button>
-
-        <label class="header-search">
-          <span class="search-symbol" aria-hidden="true">⌕</span>
-          <input
-            matInput
-            type="search"
-            name="sessionSearchHeader"
-            [(ngModel)]="sessionSearch"
-            placeholder="Search chats"
-            aria-label="Search chats"
-          >
-        </label>
-
         <span class="session-pill">{{ currentSessionIndicator() }}</span>
 
         <mat-slide-toggle
@@ -42,9 +25,6 @@
 
     <nav class="portal-nav" aria-label="Enterprise navigation">
       <a href="" aria-current="page" (click)="$event.preventDefault()">AI Help Desk</a>
-      <a href="" (click)="$event.preventDefault()">Knowledge</a>
-      <a href="" (click)="$event.preventDefault()">Service Catalog</a>
-      <a href="" (click)="$event.preventDefault()">My Requests</a>
     </nav>
   </header>
 
