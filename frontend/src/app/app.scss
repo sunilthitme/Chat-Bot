@@ -62,17 +62,13 @@
 }
 
 .td-mark {
-  width: 48px;
+  width: 54px;
   height: 48px;
-  display: grid;
-  place-items: center;
+  display: block;
   flex: 0 0 auto;
-  background: var(--td-green-600);
+  object-fit: contain;
+  background: transparent;
   border: 1px solid rgba(255, 255, 255, 0.28);
-  color: #ffffff;
-  font-size: 24px;
-  font-weight: 800;
-  line-height: 1;
 }
 
 .header-controls {
