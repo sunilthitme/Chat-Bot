@@ -13,6 +13,7 @@ import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
@@ -42,6 +43,10 @@ public class SessionService {
 
     public ChatSession createSession(CreateSessionRequest request) {
         String userKey = normalizeUserKey(request == null ? null : request.userKey());
+        if (request != null && request.privateMode()) {
+            return privateSession(null, userKey, request.title());
+        }
+
         ensureUser(userKey);
 
         ChatSession session = new ChatSession();
@@ -53,12 +58,17 @@ public class SessionService {
     }
 
     public ChatSession getOrCreateSession(String sessionId, String userKey, boolean privateMode, String firstMessage) {
+        String normalizedUserKey = normalizeUserKey(userKey);
+        if (privateMode) {
+            return privateSession(sessionId, normalizedUserKey, titleFromMessage(firstMessage));
+        }
+
         if (sessionId != null && !sessionId.isBlank()) {
             return chatSessionRepository.findById(sessionId)
                     .map(session -> updatePrivateMode(session, privateMode))
-                    .orElseGet(() -> createSession(new CreateSessionRequest(titleFromMessage(firstMessage), userKey, privateMode)));
+                    .orElseGet(() -> createSession(new CreateSessionRequest(titleFromMessage(firstMessage), normalizedUserKey, false)));
         }
-        return createSession(new CreateSessionRequest(titleFromMessage(firstMessage), userKey, privateMode));
+        return createSession(new CreateSessionRequest(titleFromMessage(firstMessage), normalizedUserKey, false));
     }
 
     public List<ChatSessionResponse> listSessions(String userKey) {
@@ -75,6 +85,28 @@ public class SessionService {
         ChatSession session = chatSessionRepository.findById(sessionId)
                 .orElseThrow(() -> new IllegalArgumentException("Chat session not found"));
         session.setPrivateMode(privateMode);
+        return toResponse(chatSessionRepository.save(session));
+    }
+
+    public ChatSessionResponse renameSession(String sessionId, String title, boolean privateMode) {
+        String resolvedTitle = resolveTitle(title);
+
+        if (privateMode) {
+            return toResponse(privateSession(sessionId, DEFAULT_USER, resolvedTitle));
+        }
+
+        ChatSession session = chatSessionRepository.findById(sessionId)
+                .orElseThrow(() -> new IllegalArgumentException("Chat session not found"));
+        if (session.isPrivateMode()) {
+            ChatSession privateResponse = privateSession(session.getId(), session.getUserKey(), resolvedTitle);
+            privateResponse.setActiveDocumentId(session.getActiveDocumentId());
+            privateResponse.setActiveDocumentName(session.getActiveDocumentName());
+            privateResponse.setCreatedAt(session.getCreatedAt());
+            privateResponse.setUpdatedAt(session.getUpdatedAt());
+            return toResponse(privateResponse);
+        }
+
+        session.setTitle(resolvedTitle);
         return toResponse(chatSessionRepository.save(session));
     }
 
@@ -201,7 +233,8 @@ public class SessionService {
     }
 
     private String resolveTitle(String title) {
-        return title == null || title.isBlank() ? "New chat" : title.trim();
+        String resolved = title == null || title.isBlank() ? "New chat" : title.trim();
+        return resolved.length() <= 180 ? resolved : resolved.substring(0, 180);
     }
 
     private String titleFromMessage(String message) {
@@ -210,5 +243,17 @@ public class SessionService {
         }
         String trimmed = message.trim();
         return trimmed.length() <= 60 ? trimmed : trimmed.substring(0, 57) + "...";
+    }
+
+    private ChatSession privateSession(String sessionId, String userKey, String title) {
+        Instant now = Instant.now();
+        ChatSession session = new ChatSession();
+        session.setId(sessionId == null || sessionId.isBlank() ? "private-" + UUID.randomUUID() : sessionId);
+        session.setUserKey(normalizeUserKey(userKey));
+        session.setTitle(resolveTitle(title));
+        session.setPrivateMode(true);
+        session.setCreatedAt(now);
+        session.setUpdatedAt(now);
+        return session;
     }
 }

@@ -3,6 +3,7 @@ package com.example.internalchatbot.controller;
 import com.example.internalchatbot.dto.ChatSessionResponse;
 import com.example.internalchatbot.dto.CreateSessionRequest;
 import com.example.internalchatbot.dto.PrivateModeRequest;
+import com.example.internalchatbot.dto.RenameSessionRequest;
 import com.example.internalchatbot.dto.StoredMessageResponse;
 import com.example.internalchatbot.ai.memory.SessionService;
 import org.springframework.web.bind.annotation.CrossOrigin;
@@ -49,5 +50,13 @@ public class SessionController {
             @RequestBody PrivateModeRequest request
     ) {
         return sessionService.setPrivateMode(sessionId, request.privateMode());
+    }
+
+    @PatchMapping("/{sessionId}/title")
+    public ChatSessionResponse rename(
+            @PathVariable String sessionId,
+            @RequestBody RenameSessionRequest request
+    ) {
+        return sessionService.renameSession(sessionId, request.title(), request.privateMode());
     }
 }

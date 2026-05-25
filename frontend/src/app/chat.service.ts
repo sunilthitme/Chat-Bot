@@ -133,9 +133,9 @@ export class ChatService {
     });
   }
 
-  createSession(privateMode: boolean): Observable<ChatSession> {
+  createSession(privateMode: boolean, title = 'New chat'): Observable<ChatSession> {
     return this.http.post<ChatSession>(`${this.baseUrl}/sessions`, {
-      title: 'New chat',
+      title,
       userKey: 'local-user',
       privateMode
     });
@@ -151,6 +151,10 @@ export class ChatService {
 
   setPrivateMode(sessionId: string, privateMode: boolean): Observable<ChatSession> {
     return this.http.patch<ChatSession>(`${this.baseUrl}/sessions/${sessionId}/private-mode`, { privateMode });
+  }
+
+  renameSession(sessionId: string, title: string, privateMode: boolean): Observable<ChatSession> {
+    return this.http.patch<ChatSession>(`${this.baseUrl}/sessions/${sessionId}/title`, { title, privateMode });
   }
 
   uploadDocument(file: File, sessionId: string, privateMode: boolean): Observable<HttpEvent<UploadResponse>> {

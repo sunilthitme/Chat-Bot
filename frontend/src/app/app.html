@@ -1,112 +1,243 @@
-<main class="app-shell" [class.dark]="darkMode()">
-  <aside class="sidebar" aria-label="Chat sessions">
-    <button class="new-chat" type="button" (click)="newChat()" [disabled]="isSidebarLoading() || indexingActive()">
-      + New chat
-    </button>
-
-    <div class="session-list">
-      <button
-        *ngFor="let session of sessions()"
-        type="button"
-        class="session-item"
-        [class.active]="session.id === currentSessionId()"
-        [disabled]="indexingActive()"
-        (click)="selectSession(session)"
-      >
-        <span>{{ session.title }}</span>
-        <small>{{ session.activeDocumentName || (session.privateMode ? 'Private' : 'Saved') }}</small>
-      </button>
-    </div>
-  </aside>
-
-  <section class="chat-window" aria-label="Internal chatbot">
-    <header class="chat-header">
-      <div>
-        <h1>Internal Chatbot</h1>
-        <p>{{ activeDocumentLabel() }}</p>
+<main class="enterprise-shell">
+  <header class="portal-header" aria-label="TD internal portal header">
+    <div class="brand-band">
+      <div class="brand-lockup">
+        <span class="td-mark" aria-hidden="true">TD</span>
+        <div>
+          <h1>TD Internal Chat Bot</h1>
+          <p>Enterprise AI Service Desk</p>
+        </div>
       </div>
-      <div class="header-actions">
-        <button
-          class="private-toggle"
-          type="button"
-          [class.active]="privateMode()"
-          [attr.aria-pressed]="privateMode()"
-          (click)="togglePrivateMode()"
+
+      <div class="header-controls">
+        <button mat-flat-button type="button" class="header-new-chat" (click)="newChat()" [disabled]="isSidebarLoading() || indexingActive()">
+          <span aria-hidden="true">+</span>
+          New Chat
+        </button>
+
+        <label class="header-search">
+          <span class="search-symbol" aria-hidden="true">⌕</span>
+          <input
+            matInput
+            type="search"
+            name="sessionSearchHeader"
+            [(ngModel)]="sessionSearch"
+            placeholder="Search chats"
+            aria-label="Search chats"
+          >
+        </label>
+
+        <span class="session-pill">{{ currentSessionIndicator() }}</span>
+
+        <mat-slide-toggle
+          class="private-switch"
+          [checked]="privateMode()"
+          [disabled]="indexingActive()"
+          (change)="togglePrivateMode()"
         >
-          {{ privateMode() ? 'Private on' : 'Private off' }}
-        </button>
-        <button class="theme-toggle" type="button" (click)="toggleTheme()">
-          {{ darkMode() ? 'Light' : 'Dark' }}
-        </button>
-        <span class="status">Online</span>
+          Private
+        </mat-slide-toggle>
       </div>
-    </header>
+    </div>
 
-    <div class="tool-strip">
-      <label class="upload-button" [class.disabled]="isLoading() || indexingActive()">
-        Upload
-        <input type="file" accept=".pdf,.docx,.txt,.log,.csv,.java,.xml,.properties,.yml,.yaml,.json" (change)="uploadDocument($event)" [disabled]="isLoading() || indexingActive()" hidden>
-      </label>
-      <div *ngIf="uploadProgress() > 0" class="upload-progress">
-        <span [style.width.%]="uploadProgress()"></span>
+    <nav class="portal-nav" aria-label="Enterprise navigation">
+      <a href="" aria-current="page" (click)="$event.preventDefault()">AI Help Desk</a>
+      <a href="" (click)="$event.preventDefault()">Knowledge</a>
+      <a href="" (click)="$event.preventDefault()">Service Catalog</a>
+      <a href="" (click)="$event.preventDefault()">My Requests</a>
+    </nav>
+  </header>
+
+  <div class="workspace">
+    <aside class="chat-sidebar" aria-label="Chat history">
+      <div class="sidebar-toolbar">
+        <button mat-flat-button type="button" class="sidebar-new-chat" (click)="newChat()" [disabled]="isSidebarLoading() || indexingActive()">
+          <span aria-hidden="true">+</span>
+          New Chat
+        </button>
+        <span class="chat-count">{{ filteredSessions().length }} chats</span>
       </div>
 
-      <form class="url-form" (ngSubmit)="ingestUrl()">
+      <label class="sidebar-search">
+        <span class="search-symbol" aria-hidden="true">⌕</span>
         <input
-          type="url"
-          name="url"
-          [(ngModel)]="urlInput"
-          placeholder="Index public webpage"
-          [disabled]="isLoading() || indexingActive()"
+          matInput
+          type="search"
+          name="sessionSearchSidebar"
+          [(ngModel)]="sessionSearch"
+          placeholder="Search chats"
+          aria-label="Search chats"
         >
-        <button type="submit" [disabled]="isLoading() || indexingActive() || !urlInput.trim()">Index</button>
-      </form>
-    </div>
+      </label>
 
-    <section *ngIf="indexingActive()" class="indexing-panel" aria-live="polite">
-      <span class="indexing-dot"></span>
-      <div>
-        <strong>{{ indexingStage() }}</strong>
-        <p>{{ indexingMessage() }}</p>
-      </div>
-    </section>
+      <div class="session-list" role="list">
+        <div
+          *ngFor="let session of filteredSessions(); trackBy: trackBySessionId"
+          class="session-item"
+          [class.active]="session.id === currentSessionId()"
+          role="listitem"
+        >
+          <button
+            type="button"
+            class="session-select"
+            [disabled]="indexingActive()"
+            (click)="selectSession(session)"
+            (dblclick)="startRename(session, $event)"
+          >
+            <ng-container *ngIf="!isRenaming(session); else renameTemplate">
+              <span class="session-title">{{ session.title }}</span>
+              <span class="session-subtitle">{{ sessionSubtitle(session) }}</span>
+            </ng-container>
 
-    <div class="messages" #messagesContainer>
-      <div
-        *ngFor="let message of messages()"
-        class="message-row"
-        [class.user-row]="message.sender === 'user'"
-        [class.bot-row]="message.sender === 'bot'"
-      >
-        <div class="message-bubble">
-          <div class="message-content" [innerHTML]="renderMarkdown(message.text)"></div>
-          <div *ngIf="message.sources?.length" class="source-list">
-            <span class="source-label">Sources</span>
-            <span *ngFor="let source of message.sources" class="source-chip">
-              {{ source.title }}<ng-container *ngIf="source.pageNumber"> p.{{ source.pageNumber }}</ng-container>
-            </span>
+            <ng-template #renameTemplate>
+              <input
+                matInput
+                class="rename-input"
+                type="text"
+                [name]="'rename-' + session.id"
+                [(ngModel)]="renameTitle"
+                (click)="$event.stopPropagation()"
+                (keydown.enter)="confirmRename(session)"
+                (keydown.escape)="cancelRename()"
+                (blur)="confirmRename(session)"
+                maxlength="180"
+                aria-label="Rename chat"
+                autofocus
+              >
+            </ng-template>
+          </button>
+
+          <div class="session-actions" *ngIf="!isRenaming(session)">
+            <button
+              type="button"
+              class="icon-action"
+              matTooltip="Rename chat"
+              (click)="startRename(session, $event)"
+              [disabled]="indexingActive()"
+              aria-label="Rename chat"
+            >
+              ✎
+            </button>
+            <button
+              type="button"
+              class="icon-action danger"
+              matTooltip="Hide from this UI session"
+              (click)="hideSessionFromUi(session, $event)"
+              [disabled]="indexingActive()"
+              aria-label="Hide chat from this UI session"
+            >
+              ×
+            </button>
           </div>
         </div>
       </div>
+    </aside>
 
-      <div *ngIf="isLoading()" class="message-row bot-row">
-        <div class="message-bubble loading">
-          <span></span><span></span><span></span>
+    <section class="assistant-workbench" aria-label="Internal chatbot">
+      <div class="breadcrumb">Home <span aria-hidden="true">›</span> AI Help Desk <span aria-hidden="true">›</span> {{ currentSessionTitle() }}</div>
+
+      <header class="workbench-header">
+        <div>
+          <h2>{{ currentSessionTitle() }}</h2>
+          <p>{{ activeDocumentLabel() }}</p>
+        </div>
+        <div class="workbench-meta">
+          <span [class.private]="privateMode()">{{ privateMode() ? 'Private mode' : 'Persistent mode' }}</span>
+          <span>Online</span>
+        </div>
+      </header>
+
+      <section class="tool-strip" aria-label="Knowledge tools">
+        <label class="upload-card" [class.disabled]="isLoading() || indexingActive()">
+          <span class="tool-icon" aria-hidden="true">⇧</span>
+          <span>
+            <strong>Upload document</strong>
+            <small>PDF, DOCX, TXT, CSV, code, or config files</small>
+          </span>
+          <input
+            type="file"
+            accept=".pdf,.docx,.txt,.log,.csv,.java,.xml,.properties,.yml,.yaml,.json"
+            (change)="uploadDocument($event)"
+            [disabled]="isLoading() || indexingActive()"
+            hidden
+          >
+        </label>
+
+        <form class="url-form" (ngSubmit)="ingestUrl()">
+          <label>
+            <span>Index public webpage</span>
+            <input
+              matInput
+              type="url"
+              name="url"
+              [(ngModel)]="urlInput"
+              placeholder="https://"
+              [disabled]="isLoading() || indexingActive()"
+            >
+          </label>
+          <button mat-stroked-button type="submit" [disabled]="isLoading() || indexingActive() || !urlInput.trim()">Index</button>
+        </form>
+
+        <mat-progress-bar
+          *ngIf="uploadProgress() > 0"
+          class="upload-progress"
+          mode="determinate"
+          [value]="uploadProgress()"
+        ></mat-progress-bar>
+      </section>
+
+      <section *ngIf="indexingActive()" class="indexing-panel" aria-live="polite">
+        <span class="indexing-dot"></span>
+        <div>
+          <strong>{{ indexingStage() }}</strong>
+          <p>{{ indexingMessage() }}</p>
+        </div>
+      </section>
+
+      <div class="messages" #messagesContainer>
+        <div
+          *ngFor="let message of messages()"
+          class="message-row"
+          [class.user-row]="message.sender === 'user'"
+          [class.bot-row]="message.sender === 'bot'"
+        >
+          <article class="message-bubble">
+            <div class="message-avatar" aria-hidden="true">{{ message.sender === 'user' ? 'You' : 'TD' }}</div>
+            <div class="message-body">
+              <div class="message-content" [innerHTML]="renderMarkdown(message.text)"></div>
+              <div *ngIf="message.sources?.length" class="source-list" aria-label="Uploaded source references">
+                <span class="source-label">Sources</span>
+                <span *ngFor="let source of message.sources" class="source-chip">
+                  {{ source.title }}<ng-container *ngIf="source.pageNumber"> p.{{ source.pageNumber }}</ng-container>
+                </span>
+              </div>
+            </div>
+          </article>
+        </div>
+
+        <div *ngIf="isLoading()" class="message-row bot-row">
+          <article class="message-bubble typing">
+            <div class="message-avatar" aria-hidden="true">TD</div>
+            <div class="typing-dots" aria-label="Assistant is typing">
+              <span></span><span></span><span></span>
+            </div>
+          </article>
         </div>
       </div>
-    </div>
 
-    <form class="chat-form" (ngSubmit)="sendMessage()">
-      <input
-        type="text"
-        name="message"
-        [(ngModel)]="userInput"
-        (ngModelChange)="onUserInputChange($event)"
-        placeholder="Message the assistant or ask about uploaded knowledge"
-        autocomplete="off"
-        [disabled]="isLoading() || indexingActive()"
-      >
-      <button type="submit" [disabled]="isLoading() || indexingActive() || !debouncedInput()">Send</button>
-    </form>
-  </section>
+      <form class="chat-form" (ngSubmit)="sendMessage()">
+        <input
+          matInput
+          type="text"
+          name="message"
+          [(ngModel)]="userInput"
+          (ngModelChange)="onUserInputChange($event)"
+          placeholder="Ask a question or request help"
+          autocomplete="off"
+          [disabled]="isLoading() || indexingActive()"
+        >
+        <button mat-flat-button type="submit" [disabled]="isLoading() || indexingActive() || !debouncedInput()">Send</button>
+      </form>
+    </section>
+  </div>
 </main>
