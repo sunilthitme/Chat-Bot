@@ -2,6 +2,8 @@ package com.example.internalchatbot.ai.vectorstore;
 
 public record VectorSearchResult(
         Long embeddingId,
+        Long documentId,
+        Integer chunkIndex,
         String sourceName,
         String sourceType,
         String sourceUrl,

@@ -10,9 +10,12 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 @Service
@@ -33,6 +36,7 @@ public class RagRetrievalService {
     private final double minScore;
     private final double intentFilterThreshold;
     private final double lowConfidenceScore;
+    private final Map<String, List<VectorSearchResult>> retrievalCache;
 
     public RagRetrievalService(
             EmbeddingService embeddingService,
@@ -42,7 +46,8 @@ public class RagRetrievalService {
             @Value("${rag.candidate-top-k:10}") int candidateTopK,
             @Value("${rag.min-score:0.20}") double minScore,
             @Value("${rag.intent-filter-threshold:0.72}") double intentFilterThreshold,
-            @Value("${rag.low-confidence-score:0.75}") double lowConfidenceScore
+            @Value("${rag.low-confidence-score:0.75}") double lowConfidenceScore,
+            @Value("${rag.retrieval-cache-size:128}") int retrievalCacheSize
     ) {
         this.embeddingService = embeddingService;
         this.vectorStoreService = vectorStoreService;
@@ -52,6 +57,13 @@ public class RagRetrievalService {
         this.minScore = minScore;
         this.intentFilterThreshold = Math.max(0.1, Math.min(intentFilterThreshold, 0.99));
         this.lowConfidenceScore = Math.max(0.1, Math.min(lowConfidenceScore, 0.99));
+        int safeCacheSize = Math.max(16, retrievalCacheSize);
+        this.retrievalCache = Collections.synchronizedMap(new LinkedHashMap<>(64, 0.75f, true) {
+            @Override
+            protected boolean removeEldestEntry(Map.Entry<String, List<VectorSearchResult>> eldest) {
+                return size() > safeCacheSize;
+            }
+        });
     }
 
     public List<VectorSearchResult> retrieve(String sessionId, String retrievalQuestion, boolean privateMode) {
@@ -72,6 +84,17 @@ public class RagRetrievalService {
 
         try {
             long startedAt = System.nanoTime();
+            String cacheKey = cacheKey(sessionId, userKey, activeDocumentId, retrievalQuestion);
+            List<VectorSearchResult> cached = retrievalCache.get(cacheKey);
+            if (cached != null) {
+                log.info(
+                        "rag retrieval cache hit sessionId={} activeDocumentId={} results={}",
+                        safe(sessionId),
+                        activeDocumentId,
+                        cached.size()
+                );
+                return cached;
+            }
             List<Double> queryVector = embeddingService.embed(retrievalQuestion);
             log.info(
                     "rag embedding generated sessionId={} activeDocumentId={} queryChars={} vectorDims={}",
@@ -153,7 +176,9 @@ public class RagRetrievalService {
                     topScores(attempt.results()),
                     elapsedMillis(startedAt)
             );
-            return attempt.results();
+            List<VectorSearchResult> selected = List.copyOf(attempt.results());
+            retrievalCache.put(cacheKey, selected);
+            return selected;
         } catch (RuntimeException ex) {
             log.warn("RAG retrieval skipped because embedding generation or vector search failed.", ex);
             return List.of();
@@ -323,10 +348,23 @@ public class RagRetrievalService {
         return value.length() <= 12 ? value : value.substring(0, 12);
     }
 
+    private String cacheKey(String sessionId, String userKey, Long activeDocumentId, String retrievalQuestion) {
+        return defaultString(sessionId)
+                + "|" + defaultString(userKey)
+                + "|" + (activeDocumentId == null ? "" : activeDocumentId)
+                + "|" + normalize(retrievalQuestion);
+    }
+
+    private String defaultString(String value) {
+        return value == null ? "" : value;
+    }
+
     private record RankedResult(VectorSearchResult result, double score) {
         VectorSearchResult toSearchResult() {
             return new VectorSearchResult(
                     result.embeddingId(),
+                    result.documentId(),
+                    result.chunkIndex(),
                     result.sourceName(),
                     result.sourceType(),
                     result.sourceUrl(),

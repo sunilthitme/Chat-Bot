@@ -1,6 +1,6 @@
 # Internal Chatbot Backend
 
-Spring Boot REST API for a DB-first enterprise chatbot with modular AI packages, session memory, private mode, page-aware document ingestion, recursive URL crawling, Ollama generation, LangChain4j embeddings, ChromaDB vector sync, and local persisted vector metadata.
+Spring Boot REST API for a DB-first enterprise chatbot with local-only RAG: H2 JSON vector storage, Apache Lucene BM25 keyword search, Java cosine similarity, session memory, async ingestion, streaming Ollama responses, and strict grounded prompts.
 
 ## Run
 
@@ -8,35 +8,52 @@ Spring Boot REST API for a DB-first enterprise chatbot with modular AI packages,
 mvn spring-boot:run
 ```
 
-## Ollama LLM And Embeddings
-
-Ollama is enabled by default. Start Ollama and pull both models:
+## Required Local AI Runtime
 
 ```bash
 ollama pull phi3:mini
 ollama pull nomic-embed-text
 ```
 
-Chat requests always check the internal database first.
+No database server, vector database, Docker service, or Python service is required.
 
-- If the database has a matching answer, the prompt tells Ollama to prefer it.
-- If the database has no answer, RAG context from stored documents and crawled URLs is provided.
-- If Ollama is unavailable, the service falls back to the DB answer or the default not-found message.
-- If private mode is enabled, messages and embeddings are not persisted.
-- Chat requests never fetch URLs, parse raw HTML, or regenerate document embeddings.
-- RAG searches the active uploaded document for the current session first, then local hybrid candidates, reranks them against the question, and sends only the best 3 chunks to Ollama.
-- Code and Spring Boot questions receive metadata boosts only when query intent confidence is high enough.
-- Resume questions are tagged and chunked around sections such as Education, Experience, Skills, Certifications, and Projects.
-- The prompt instructs Ollama to answer only from the DB answer and retrieved chunks. Missing context returns `Information not found in the indexed knowledge.`
+## Retrieval Architecture
 
-## Ask API
+- `EmbeddingService` embeds document chunks and user queries with `nomic-embed-text`.
+- `VectorStoreService` stores chunk metadata and vector JSON in H2.
+- `LuceneIndexService` indexes the same chunks into an in-process BM25 index and rebuilds from H2 on startup.
+- `RagRetrievalService` runs confidence-gated metadata filtering, semantic retrieval, keyword fallback, reranking, retrieval caching, and low-confidence fallback.
+- `PromptBuilder` injects compact retrieved context, recent session memory, and the current question into one strict grounded prompt.
+- `AiOrchestratorService` ensures one logical LLM call per user message and blocks chat while ingestion is still running.
+
+## Supported Ingestion
+
+```http
+POST http://localhost:8080/api/knowledge/documents
+POST http://localhost:8080/api/ingest/url
+GET  http://localhost:8080/api/ingest/status?sessionId={sessionId}
+```
+
+Supported upload types: PDF, DOCX, TXT, LOG, CSV, Java, XML, properties, YAML, JSON, plus Apache Tika fallback for other readable office/text formats.
+
+The ingestion pipeline extracts text, normalizes it, chunks with overlap, generates embeddings once, persists vectors in H2, indexes BM25 terms in Lucene, generates a concise summary, and sets the session `activeDocumentId`.
+
+## Resume And Code Retrieval
+
+- Resume files are detected from filename/content and chunked by sections: Education, Experience, Skills, Certifications, Projects, and Summary.
+- Factual questions about degree, year, university, percentage, and CGPA receive retrieval boosts for education chunks and neighboring chunk expansion.
+- Java/config files use syntax-preserving chunking around classes, annotations, methods, endpoints, and configuration entries.
+- Code filters are applied only when query intent confidence is high enough.
+
+## Chat API
 
 ```http
 POST http://localhost:8080/api/chat/ask
 Content-Type: application/json
 
 {
-  "message": "How to create RITM?",
+  "message": "When did Sachin complete his bachelor degree?",
+  "sessionId": "current-session-id",
   "privateMode": false
 }
 ```
@@ -48,45 +65,6 @@ POST http://localhost:8080/api/chat/ask/stream
 Content-Type: application/json
 ```
 
-Document upload and URL ingestion:
-
-```http
-POST http://localhost:8080/api/knowledge/documents
-POST http://localhost:8080/api/ingest/url
-GET  http://localhost:8080/api/ingest/status?sessionId={sessionId}
-```
-
-Supported upload types: PDF, DOCX, TXT, LOG, CSV, Java, XML, properties, YAML, JSON, plus Apache Tika fallback for other readable office/text formats.
-URL ingestion accepts public HTTP/HTTPS sites, follows redirects, reads sitemaps, crawls same-host links, and blocks private/local hosts by default with `url.block-private-hosts=true`.
-HTML extraction uses Readability4J first, then Boilerpipe, Apache Tika, structured Jsoup cleanup, and an optional Trafilatura CLI fallback when `url.trafilatura.enabled=true`.
-Chat responses do not expose retrieved source metadata to the frontend.
-
-Document upload and `POST /api/ingest/url` return immediately with a queued status. The background ingestion executor extracts content, cleans it, chunks it with `rag.chunk-size=800` and `rag.chunk-overlap=150`, embeds once, stores vectors, then generates a concise summary. Java and config files use syntax-preserving code chunking around classes, annotations, methods, endpoints, and configuration entries. The frontend polls `/api/ingest/status` and blocks questions until indexing reaches `COMPLETED`, `NO_EMBEDDINGS`, or `FAILED`. Chat then uses hybrid similarity and keyword search only.
-
-After a document is successfully indexed, its `documentId` is stored as the session `activeDocumentId`. Follow-up questions are scoped to that document first, which prevents older global pages such as unrelated tutorial URLs from being injected into the prompt.
-
-Retrieval debug logs include query intent, confidence, applied filters, fallback mode, reranking scores, selected chunks, embedding dimensions, and prompt size.
-
-## ChromaDB
-
-```bash
-docker compose up -d chromadb
-curl http://localhost:8000/api/v2/heartbeat
-```
-
-## Direct LLM API
-
-```http
-POST http://localhost:8080/api/llm/generate
-Content-Type: application/json
-
-{
-  "message": "Explain password reset steps"
-}
-```
-
-This endpoint returns `503 Service Unavailable` when `ollama.enabled=false` or Ollama cannot be reached.
-
 ## H2 Console
 
 Open `http://localhost:8080/h2-console`.
@@ -95,24 +73,19 @@ Open `http://localhost:8080/h2-console`.
 - User: `sa`
 - Password: leave empty
 
-## Production Database
-
-Replace the H2 datasource properties in `src/main/resources/application.properties` with MySQL:
+## Important Properties
 
 ```properties
-spring.datasource.url=jdbc:mysql://localhost:3306/internal_chatbot
-spring.datasource.username=root
-spring.datasource.password=your_password
-spring.jpa.hibernate.ddl-auto=update
+rag.top-k=3
+rag.candidate-top-k=24
+rag.local-candidate-limit=800
+rag.allow-global-retrieval=false
+rag.neighbor-expansion-limit=1
+rag.lucene.rebuild-on-startup=true
+rag.retrieval-cache-size=128
+rag.max-context-chars=2200
+ollama.model=phi3:mini
+ollama.num-predict=256
 ```
 
-Or PostgreSQL:
-
-```properties
-spring.datasource.url=jdbc:postgresql://localhost:5432/internal_chatbot
-spring.datasource.username=postgres
-spring.datasource.password=your_password
-spring.jpa.hibernate.ddl-auto=validate
-```
-
-Reference SQL for the enterprise tables is in `src/main/resources/schema-enterprise.sql`. The production RAG refactor notes are in `../docs/production-rag-refactor.md`.
+Reference SQL is in `src/main/resources/schema-enterprise.sql`.

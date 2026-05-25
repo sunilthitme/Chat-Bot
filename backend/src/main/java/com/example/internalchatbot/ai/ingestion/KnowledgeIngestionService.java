@@ -434,7 +434,7 @@ public class KnowledgeIngestionService {
             case STATUS_EXTRACTING, "INDEXING" -> "Extracting content";
             case STATUS_CHUNKING -> "Chunking content";
             case STATUS_EMBEDDING -> "Generating embeddings";
-            case STATUS_STORING -> "Storing in ChromaDB";
+            case STATUS_STORING -> "Storing embeddings in local H2 and Lucene";
             case STATUS_SUMMARIZING -> "Generating summary";
             case STATUS_COMPLETED -> "Indexing completed";
             case STATUS_NO_EMBEDDINGS -> "Indexed without embeddings";
@@ -449,7 +449,7 @@ public class KnowledgeIngestionService {
             case STATUS_EXTRACTING, "INDEXING" -> "Extracting and cleaning readable content.";
             case STATUS_CHUNKING -> "Splitting content into retrieval-ready chunks.";
             case STATUS_EMBEDDING -> "Generating embeddings with nomic-embed-text.";
-            case STATUS_STORING -> "Storing embeddings in the vector database.";
+            case STATUS_STORING -> "Storing embeddings in H2 and updating the Lucene keyword index.";
             case STATUS_SUMMARIZING -> "Generating a concise summary of the indexed content.";
             case STATUS_COMPLETED -> completedMessage(document);
             case STATUS_NO_EMBEDDINGS -> noEmbeddingsMessage(document);

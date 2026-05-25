@@ -6,7 +6,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
 @Configuration
-@EnableConfigurationProperties({ChromaProperties.class, OllamaProperties.class})
+@EnableConfigurationProperties(OllamaProperties.class)
 public class RagConfiguration {
 
     @Bean

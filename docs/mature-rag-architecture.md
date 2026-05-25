@@ -1,177 +1,170 @@
-# Mature ChatGPT-Style RAG Architecture
+# Mature Local RAG Architecture
+
+This branch uses a corporate-safe RAG stack that stays inside the Spring Boot process and H2 database while preserving ChatGPT-style document QA behavior.
 
 ## Architecture Diagram
 
 ```mermaid
 flowchart TD
     UI["Angular Chat UI"]
-    API["Spring Boot API"]
+    API["Spring Boot APIs"]
     INGEST["Async Ingestion Pipeline"]
-    EXTRACT["Tika / PDFBox / POI / Jsoup Extraction"]
-    CHUNK["Recursive + Code-Aware Chunker"]
+    EXTRACT["PDFBox / POI / Tika / Jsoup"]
+    CHUNK["Semantic + Resume + Code-Aware Chunker"]
     EMBED["Ollama nomic-embed-text"]
-    CHROMA["ChromaDB Collection"]
-    META["Local Embedding Metadata DB"]
-    MEMORY["Session Memory"]
-    RETRIEVE["Hybrid Retrieval + Reranking"]
-    PROMPT["Strict Grounded Prompt Builder"]
+    H2["H2 embeddings_metadata vector JSON"]
+    LUCENE["Apache Lucene BM25 Index"]
+    MEMORY["Session + Active Document Memory"]
+    RETRIEVE["Hybrid Retriever + Reranker"]
+    PROMPT["Strict Grounded Prompt"]
     LLM["Ollama phi3:mini Streaming"]
 
     UI --> API
     API --> INGEST
     INGEST --> EXTRACT --> CHUNK --> EMBED
-    EMBED --> CHROMA
-    EMBED --> META
+    EMBED --> H2
+    CHUNK --> LUCENE
     API --> MEMORY
     API --> RETRIEVE
-    RETRIEVE --> CHROMA
-    RETRIEVE --> META
+    RETRIEVE --> H2
+    RETRIEVE --> LUCENE
     MEMORY --> PROMPT
     RETRIEVE --> PROMPT
     PROMPT --> LLM --> UI
 ```
 
-## Spring Boot Package Structure
+## Package Structure
 
 ```text
 ai/
-  crawling/       URL validation, browser-like fetch, readable HTML extraction
-  embeddings/     nomic-embed-text embedding client with batching/cache
-  ingestion/      document extraction, code-aware chunking, indexing status, summary
-  llm/            Ollama generation/streaming, timeout and retry handling
-  memory/         session-scoped recent conversation memory
-  prompts/        strict context-injection prompt builder
-  rag/            AI orchestration and one-call response generation
-  retrieval/      hybrid retrieval, metadata-aware reranking
+  crawling/       public URL validation, browser-like fetch, readable extraction
+  embeddings/     Ollama embedding client with batching and cache
+  ingestion/      document extraction, status tracking, summary, chunking
+  llm/            Ollama generate/streaming, timeout and retry handling
+  memory/         session memory and active document continuity
+  prompts/        compact strict RAG prompt construction
+  rag/            one-call orchestration and grounding guardrails
+  retrieval/      query intent, Lucene BM25, fallback, reranking
   streaming/      SSE response streaming
-  vectorstore/    ChromaDB sync plus local vector metadata fallback
+  vectorstore/    H2 vector JSON storage and Java cosine similarity
 ```
 
-## Database Schema Additions
+## H2 Schema
 
-`chat_sessions` stores active document memory:
-
-```sql
-active_document_id bigint,
-active_document_name varchar(260)
-```
-
-`embeddings_metadata` stores retrieval metadata per chunk:
+`embeddings_metadata` stores both metadata and vectors:
 
 ```sql
+document_id bigint,
+session_id varchar(36),
 user_key varchar(160),
+source_name varchar(260),
+source_type varchar(40),
+source_url varchar(600),
+page_number integer,
+section_title varchar(260),
 document_type varchar(80),
 language varchar(80),
-topic varchar(160)
+topic varchar(160),
+chunk_index integer,
+token_estimate integer,
+content_hash varchar(64),
+content_chunk clob not null,
+vector_json clob not null,
+metadata_json clob
 ```
 
-Indexes:
+Key indexes:
 
 ```sql
 idx_embeddings_session_private(session_id, private_mode)
 idx_embeddings_user_private(user_key, private_mode)
 idx_embeddings_document(document_id)
-idx_embeddings_hash(content_hash)
+idx_embeddings_document_chunk(document_id, chunk_index, private_mode)
+idx_embeddings_document_session(document_id, session_id, private_mode)
 idx_embeddings_filter(document_type, language, topic, private_mode)
 ```
-
-## Chroma Collection Design
-
-Collection: `internal_chatbot_knowledge`
-
-Each vector entry stores:
-
-- `sourceName`
-- `sourceType`
-- `sessionId`
-- `pageNumber`
-- `sectionTitle`
-- `documentType`
-- `language`
-- `topic`
-- `chunkIndex`
-- `contentHash`
-- `uploadDate`
-
-The local metadata table mirrors these fields so retrieval keeps working even when ChromaDB is temporarily unavailable.
 
 ## Ingestion Flow
 
 ```text
 PDF/DOCX/TXT/CSV/Java/Config/URL
 -> extract readable text once
--> preserve document/page/code metadata
--> chunk with overlap
--> code files split around classes, annotations, endpoints, and methods
--> generate embeddings with nomic-embed-text
--> persist vectors in ChromaDB and local metadata
--> generate concise upload summary
--> set activeDocumentId on the chat session
--> mark indexing complete
+-> infer documentType/language/topic metadata
+-> resume-aware or code-aware chunking when applicable
+-> overlap chunking to avoid factual fragmentation
+-> generate embeddings in batches
+-> store vector JSON in H2
+-> update Lucene BM25 index
+-> generate upload summary
+-> set activeDocumentId on the session
 ```
+
+Private-mode content is never persisted.
 
 ## Retrieval Flow
 
 ```text
-User question
--> recent session memory builds retrieval query
--> query embedding
--> active document scoped search when activeDocumentId exists
--> session scoped local semantic + keyword search
--> user scoped long-term search only when no session document exists
--> metadata boosts for code/java/spring/api/config queries
--> rerank candidates
--> keep top 5 chunks
--> inject into strict grounded prompt
--> one streamed Ollama generation call
+Current question + recent memory
+-> one query embedding
+-> classify query intent with confidence score
+-> active document/session scoped retrieval
+-> Lucene BM25 keyword search
+-> H2 vector cosine similarity
+-> merge scores and metadata boosts
+-> low-confidence fallback without strict filters
+-> keyword-hybrid fallback
+-> rerank with lexical, section, entity, code, and factual boosts
+-> expand previous/next chunks
+-> compact prompt context
+-> one streamed Ollama call
 ```
 
-## Memory Flow
+This prevents unrelated indexed webpages from winning over the current uploaded resume/document.
 
-- Active document memory: latest successfully indexed upload is stored on the chat session and searched first.
-- Long-term memory: uploaded documents, URLs, chunks, embeddings, and metadata scoped by user key.
-- Short-term memory: last 20 session messages compressed into the retrieval query and prompt.
-- Private mode: skips message persistence, embeddings, and long-term storage.
+## Resume Retrieval
 
-## Prompt Strategy
+Resume-aware chunking stores section metadata:
 
-The prompt contains:
+- `Education`
+- `Experience`
+- `Skills`
+- `Certifications`
+- `Projects`
+- `Summary`
 
-1. System grounding rules.
-2. Recent session memory for pronoun/follow-up resolution.
-3. Retrieval query.
-4. Internal DB answer if available.
-5. Retrieved chunks with filename/page/section/type/language.
-6. Current user question.
+Degree/year/university/percentage questions boost education chunks, exact entity matches, year-bearing chunks, and neighboring chunks. A question such as "When did Sachin complete his bachelor degree?" should search the active resume scope first and avoid code/web filters unless query intent confidence is high.
 
-The LLM is instructed to answer only from grounded context and return `Information not found in the indexed knowledge.` when retrieval does not support the answer.
+## Code Retrieval
 
-## Query Intent And Fallbacks
+Code-aware chunking preserves:
 
-`QueryIntentClassifier` classifies only the current user question, not the expanded memory query. This prevents resume questions from inheriting unrelated Java/Spring tokens from earlier chat memory.
+- Java classes, interfaces, records, enums
+- annotations and Spring endpoint mappings
+- method-level boundaries
+- YAML/properties/XML/JSON configuration entries
 
-Metadata filters are applied only when the intent confidence crosses `rag.intent-filter-threshold`. The retrieval flow is:
+Code filters are boost-only by default and become enforced only when intent confidence crosses `rag.intent-filter-threshold`.
 
-```text
-Classify current question
--> if confidence is high, apply metadata filter
--> rerank
--> if top score < rag.low-confidence-score, retry without metadata filters
--> if still weak, retry as keyword-hybrid with boost-only metadata
-```
+## Debug Logs
 
-Resume documents are tagged as `documentType=resume` and chunked by sections such as Education, Experience, Skills, Certifications, and Projects. This keeps factual resume questions, for example "When did Sachin complete bachelor degree?", near education chunks instead of older web/code chunks.
+The backend logs:
 
-## Production Best Practices
+- query intent and confidence
+- applied metadata filter mode
+- embedding dimensions
+- Lucene hit count and top BM25 score
+- cosine/hybrid top scores
+- fallback activation
+- reranking scores
+- neighboring chunk expansion
+- selected chunk count
+- prompt character count
+- LLM latency
 
-- Keep ingestion and chat flows separate.
-- Treat active uploaded documents as the first retrieval scope to prevent unrelated global pages from winning.
-- Keep query intent filters confidence-gated; do not infer code/Spring intent from generic words such as "service".
-- Keep prompt context small; default top-k is 3, max context is 2200 characters, and generation is capped with `ollama.num-predict=256`.
-- Never reread uploaded documents during chat.
-- Never regenerate document embeddings during chat.
-- Use ChromaDB for vector search and local metadata as a resilient hybrid index.
-- Keep top-k small and rerank before prompt construction.
-- Stream answers with SSE to avoid UI freezing.
-- Use source references from clean metadata only; never expose vector IDs or session IDs.
-- Re-index old documents after metadata schema changes if code-aware retrieval is needed for existing uploads.
+## Production Notes
+
+- Keep `rag.allow-global-retrieval=false` for internal document QA to avoid cross-document leakage.
+- Keep `rag.top-k=3` and `rag.max-context-chars=2200` for `phi3:mini`.
+- Rebuild Lucene from H2 on startup with `rag.lucene.rebuild-on-startup=true`.
+- For very large deployments, replace H2 behind the repository layer with an approved enterprise database and preserve the same retrieval interfaces.
+- Do not expose vector IDs, embedding IDs, session IDs, or raw metadata to the UI.

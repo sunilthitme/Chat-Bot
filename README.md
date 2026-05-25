@@ -1,8 +1,19 @@
 # Internal Chatbot
 
-Angular + Spring Boot internal chatbot with DB-first answers, Ollama, multi-session memory, private mode, modular production RAG, document ingestion, URL crawling, and persisted enterprise knowledge.
+Angular + Spring Boot internal chatbot with DB-first answers, Ollama, multi-session memory, private mode, async ingestion, and an enterprise-safe RAG stack that runs without external vector databases.
 
-See [docs/enterprise-ai-architecture.md](docs/enterprise-ai-architecture.md) for the module-by-module architecture, API flow, schema, and production recommendations. See [docs/mature-rag-architecture.md](docs/mature-rag-architecture.md) for the ChatGPT-style RAG design, hybrid retrieval flow, memory flow, Chroma collection design, and production guidance. See [docs/production-rag-refactor.md](docs/production-rag-refactor.md) for refactor notes. See [docs/chroma-v2-rag.md](docs/chroma-v2-rag.md) for the ChromaDB API V2 and LangChain4j setup.
+This branch is designed for restricted corporate environments:
+
+- No PostgreSQL requirement
+- No ChromaDB requirement
+- No Docker requirement
+- No Python service requirement
+- H2 stores embeddings as JSON arrays
+- Apache Lucene provides in-process BM25 keyword search
+- Java computes cosine similarity over persisted vectors
+- Ollama provides `phi3:mini` and `nomic-embed-text`
+
+See [docs/restricted-corporate-rag.md](docs/restricted-corporate-rag.md) for the architecture, flow diagrams, schema, retrieval algorithm, and production notes.
 
 ## Run Backend
 
@@ -13,9 +24,7 @@ mvn spring-boot:run
 
 Backend URL: `http://localhost:8080`
 
-## Ollama And RAG
-
-Ollama is enabled by default in `backend/src/main/resources/application.properties`.
+## Ollama
 
 Start Ollama locally and pull the configured models:
 
@@ -31,34 +40,38 @@ ollama.enabled=true
 ollama.base-url=http://localhost:11434
 ollama.model=phi3:mini
 ollama.embedding-model=nomic-embed-text
-chroma.enabled=true
-chroma.base-url=http://localhost:8000
-chroma.tenant-name=default
-chroma.database-name=default
+rag.allow-global-retrieval=false
+rag.top-k=3
+rag.chunk-size=800
+rag.chunk-overlap=150
 ```
 
-Chat requests run through `ai.rag.AiOrchestratorService`: internal DB lookup first, search the active uploaded document for the session, retrieve local hybrid candidates, confidence-gate metadata filters, rerank to the best 3 chunks, build a strict grounded prompt, then make one logical streamed Ollama response. Private-mode requests skip message persistence, embedding persistence, and future knowledge storage.
+## RAG Flow
 
-URL ingestion is separate from chat:
+Ingestion and chat are separate:
 
-```http
-POST /api/ingest/url
-GET /api/ingest/status?sessionId={sessionId}
+```text
+Upload or URL
+-> extract text once
+-> section/code/resume-aware chunking
+-> generate embeddings once
+-> store chunks and vectors in H2
+-> index chunks in Lucene
+-> summarize content
+-> set activeDocumentId on the session
 ```
 
-The URL is fetched, cleaned, chunked, embedded, stored, and summarized in the background. Document uploads use the same indexing lifecycle. Chat is gated while the current session is indexing, so users see a concise summary before asking questions. Chat never rereads webpages, reparses files, regenerates embeddings, or sends raw HTML to Ollama.
-
-## Run ChromaDB
-
-```bash
-docker compose up -d chromadb
+```text
+Chat question
+-> build query from current question + recent memory
+-> embed query once
+-> search active document/session scope
+-> merge H2 cosine similarity + Lucene BM25
+-> rerank, expand neighboring chunks, keep compact context
+-> one streamed Ollama response
 ```
 
-Health check:
-
-```bash
-curl http://localhost:8000/api/v2/heartbeat
-```
+Chat never rereads uploaded files, never crawls URLs during question answering, and never regenerates stored embeddings during chat.
 
 ## Run Frontend
 
@@ -70,25 +83,15 @@ npm start
 
 Frontend URL: `http://localhost:4200`
 
-## API
+## Main APIs
 
 ```http
 POST /api/chat/ask
-Content-Type: application/json
-
-{
-  "message": "How to create RITM?",
-  "privateMode": false
-}
+POST /api/chat/ask/stream
+POST /api/knowledge/documents
+POST /api/ingest/url
+GET  /api/ingest/status?sessionId={sessionId}
+GET  /api/sessions
 ```
 
-Response:
-
-```json
-{
-  "reply": "Steps to create RITM: 1. Open the service portal...",
-  "privateMode": false
-}
-```
-
-Additional APIs include `/api/sessions`, `/api/knowledge/documents`, `/api/ingest/url`, and `/api/chat/ask/stream`.
+Chat responses do not expose vector IDs, embedding IDs, or internal session metadata.

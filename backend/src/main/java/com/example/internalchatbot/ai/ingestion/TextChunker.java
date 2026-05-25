@@ -2,6 +2,8 @@ package com.example.internalchatbot.ai.ingestion;
 
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.time.Instant;
 import java.util.ArrayList;
@@ -13,6 +15,7 @@ import java.util.Map;
 @Service
 public class TextChunker {
 
+    private static final Logger log = LoggerFactory.getLogger(TextChunker.class);
     private static final List<String> SEPARATORS = List.of("\n\n", "\n", ". ", "; ", ", ", " ");
 
     private final int chunkSize;
@@ -82,6 +85,20 @@ public class TextChunker {
                 ));
             }
         }
+        log.info(
+                "chunking completed source={} pages={} chunks={} chunkSize={} overlap={} firstSections={}",
+                document.sourceName(),
+                document.pages().size(),
+                chunks.size(),
+                chunkSize,
+                overlap,
+                chunks.stream()
+                        .map(DocumentChunk::sectionTitle)
+                        .filter(title -> title != null && !title.isBlank())
+                        .distinct()
+                        .limit(5)
+                        .toList()
+        );
         return chunks;
     }
 

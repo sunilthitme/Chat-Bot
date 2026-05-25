@@ -21,6 +21,16 @@ public interface EmbeddingMetadataRepository extends JpaRepository<EmbeddingMeta
 
     List<EmbeddingMetadata> findByDocumentIdAndSessionIdAndPrivateModeFalse(Long documentId, String sessionId);
 
+    List<EmbeddingMetadata> findByDocumentIdAndPrivateModeFalseOrderByChunkIndexAsc(Long documentId, Pageable pageable);
+
+    List<EmbeddingMetadata> findByDocumentIdAndSessionIdAndPrivateModeFalseOrderByChunkIndexAsc(
+            Long documentId,
+            String sessionId,
+            Pageable pageable
+    );
+
+    Optional<EmbeddingMetadata> findFirstByDocumentIdAndChunkIndexAndPrivateModeFalse(Long documentId, Integer chunkIndex);
+
     Optional<EmbeddingMetadata> findFirstByDocumentIdAndContentHashAndPrivateModeFalse(Long documentId, String contentHash);
 
     List<EmbeddingMetadata> findByContentHashAndPrivateModeFalse(String contentHash);

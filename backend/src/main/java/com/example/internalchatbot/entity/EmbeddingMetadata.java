@@ -20,6 +20,8 @@ import java.time.Instant;
                 @Index(name = "idx_embeddings_session_private", columnList = "session_id, private_mode"),
                 @Index(name = "idx_embeddings_user_private", columnList = "user_key, private_mode"),
                 @Index(name = "idx_embeddings_document", columnList = "document_id"),
+                @Index(name = "idx_embeddings_document_chunk", columnList = "document_id, chunk_index, private_mode"),
+                @Index(name = "idx_embeddings_document_session", columnList = "document_id, session_id, private_mode"),
                 @Index(name = "idx_embeddings_hash", columnList = "content_hash"),
                 @Index(name = "idx_embeddings_filter", columnList = "document_type, language, topic, private_mode")
         }

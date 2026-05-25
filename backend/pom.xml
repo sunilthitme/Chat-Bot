@@ -20,7 +20,7 @@
     <properties>
         <java.version>21</java.version>
         <langchain4j.version>1.14.1</langchain4j.version>
-        <langchain4j.chroma.version>1.14.1-beta24</langchain4j.chroma.version>
+        <lucene.version>9.12.2</lucene.version>
         <tika.version>3.3.0</tika.version>
         <commons-csv.version>1.14.1</commons-csv.version>
     </properties>
@@ -112,17 +112,30 @@
             <artifactId>jackson-databind</artifactId>
         </dependency>
 
-        <!-- LangChain4j embeddings and Chroma vector-store adapter for RAG. -->
+        <!-- LangChain4j Ollama embedding client. Vectors are stored locally in H2, not in an external vector DB. -->
         <dependency>
             <groupId>dev.langchain4j</groupId>
             <artifactId>langchain4j-ollama</artifactId>
             <version>${langchain4j.version}</version>
         </dependency>
 
+        <!-- In-process BM25 keyword index for corporate-safe hybrid retrieval. -->
         <dependency>
-            <groupId>dev.langchain4j</groupId>
-            <artifactId>langchain4j-chroma</artifactId>
-            <version>${langchain4j.chroma.version}</version>
+            <groupId>org.apache.lucene</groupId>
+            <artifactId>lucene-core</artifactId>
+            <version>${lucene.version}</version>
+        </dependency>
+
+        <dependency>
+            <groupId>org.apache.lucene</groupId>
+            <artifactId>lucene-analysis-common</artifactId>
+            <version>${lucene.version}</version>
+        </dependency>
+
+        <dependency>
+            <groupId>org.apache.lucene</groupId>
+            <artifactId>lucene-queryparser</artifactId>
+            <version>${lucene.version}</version>
         </dependency>
 
         <!-- Supports login-required dynamic URL capture when a browser driver is configured. -->
@@ -132,24 +145,10 @@
             <version>4.43.0</version>
         </dependency>
 
-        <!-- In-memory database for beginner-friendly local development. -->
+        <!-- File-backed H2 database for local persistence in restricted corporate environments. -->
         <dependency>
             <groupId>com.h2database</groupId>
             <artifactId>h2</artifactId>
-            <scope>runtime</scope>
-        </dependency>
-
-        <!-- Keep this dependency when switching from H2 to MySQL later. -->
-        <dependency>
-            <groupId>com.mysql</groupId>
-            <artifactId>mysql-connector-j</artifactId>
-            <scope>runtime</scope>
-        </dependency>
-
-        <!-- Keep this dependency when switching from H2 to PostgreSQL later. -->
-        <dependency>
-            <groupId>org.postgresql</groupId>
-            <artifactId>postgresql</artifactId>
             <scope>runtime</scope>
         </dependency>
 
