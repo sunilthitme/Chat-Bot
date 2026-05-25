@@ -8,24 +8,13 @@ import java.time.Duration;
 public record OllamaProperties(
         boolean enabled,
         String baseUrl,
-        String url,
-        String model,
-        String embeddingUrl,
         String embeddingModel,
-        Duration embeddingTimeout,
-        Duration connectTimeout,
-        Duration requestTimeout,
-        double temperature
+        Duration embeddingTimeout
 ) {
     public OllamaProperties {
         baseUrl = defaultIfBlank(baseUrl, "http://localhost:11434").replaceAll("/+$", "");
-        url = defaultIfBlank(url, baseUrl + "/api/generate");
-        model = defaultIfBlank(model, "phi3:mini");
-        embeddingUrl = defaultIfBlank(embeddingUrl, baseUrl + "/api/embeddings");
         embeddingModel = defaultIfBlank(embeddingModel, "nomic-embed-text");
         embeddingTimeout = embeddingTimeout == null ? Duration.ofSeconds(45) : embeddingTimeout;
-        connectTimeout = connectTimeout == null ? Duration.ofSeconds(5) : connectTimeout;
-        requestTimeout = requestTimeout == null ? Duration.ofSeconds(240) : requestTimeout;
     }
 
     private static String defaultIfBlank(String value, String fallback) {

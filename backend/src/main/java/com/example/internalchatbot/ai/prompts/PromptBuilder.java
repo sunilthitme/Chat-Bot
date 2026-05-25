@@ -98,7 +98,7 @@ public class PromptBuilder {
             double retrievalConfidence
     ) {
         return """
-                You are a mature ChatGPT-like enterprise AI assistant running locally through Ollama.
+                You are a mature ChatGPT-like enterprise AI assistant.
 
                 The retrieval layer did not find sufficiently relevant indexed context for this turn.
                 Retrieval confidence: %.3f

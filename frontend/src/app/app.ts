@@ -56,7 +56,7 @@ export class AppComponent implements AfterViewChecked, OnDestroy, OnInit {
   readonly messages = signal<ChatMessage[]>([
     {
       sender: 'bot',
-      text: 'Welcome to TD Internal Chat Bot. Start a new chat, upload a document, or ask a question.'
+      text: 'Welcome to Internal Chat Bot. Start a new chat, upload a document, or ask a question.'
     }
   ]);
 

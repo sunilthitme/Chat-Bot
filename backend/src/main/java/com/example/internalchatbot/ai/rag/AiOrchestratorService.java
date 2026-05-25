@@ -151,7 +151,7 @@ public class AiOrchestratorService {
                 onToken.accept(token);
             });
         } catch (RestClientException ex) {
-            log.warn("Ollama streaming failed requestId={}. Falling back gracefully.", prepared.requestId(), ex);
+            log.warn("AI provider streaming failed requestId={} provider={}. Falling back gracefully.", prepared.requestId(), llmService.providerName(), ex);
         }
 
         String reply = streamedReply.isEmpty()
@@ -348,7 +348,7 @@ public class AiOrchestratorService {
                 return llmReply;
             }
         } catch (RuntimeException ex) {
-            log.warn("Ollama request failed requestId={}. Falling back gracefully.", requestId, ex);
+            log.warn("AI provider request failed requestId={} provider={}. Falling back gracefully.", requestId, llmService.providerName(), ex);
         }
 
         return storedAnswer == null ? fallbackReply : storedAnswer;
@@ -448,7 +448,7 @@ public class AiOrchestratorService {
         if (prepared.indexingActive() && containsAny(normalized, "document", "upload", "file", "pdf", "indexed")) {
             return "Some uploaded content is still being indexed. I can answer from it once indexing completes, or I can help generally if you share the relevant details here.";
         }
-        return "I do not have enough relevant indexed context for that, and Ollama is currently unavailable. Once Ollama is running, I can answer generally or use matching uploaded knowledge.";
+        return "I do not have enough relevant indexed context for that, and the AI provider is currently unavailable. Once it is configured, I can answer generally or use matching uploaded knowledge.";
     }
 
     private String combineMemory(String conversationMemory, String longTermMemory) {

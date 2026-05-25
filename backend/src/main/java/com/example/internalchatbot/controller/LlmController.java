@@ -27,14 +27,14 @@ public class LlmController {
     @PostMapping("/generate")
     public ChatResponse generate(@Valid @RequestBody ChatRequest request) {
         if (!llmService.isEnabled()) {
-            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "Ollama service is disabled");
+            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, llmService.providerName() + " service is disabled");
         }
 
         try {
             String reply = llmService.generateResponse(request.getMessage());
             return new ChatResponse(reply);
         } catch (RestClientException ex) {
-            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "Ollama service is unavailable", ex);
+            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, llmService.providerName() + " service is unavailable", ex);
         }
     }
 }

@@ -106,7 +106,7 @@
             <version>2.12.2</version>
         </dependency>
 
-        <!-- JSON parsing for Ollama streaming lines and persisted vector values. -->
+        <!-- JSON parsing for GitHub Models streaming lines and persisted vector values. -->
         <dependency>
             <groupId>com.fasterxml.jackson.core</groupId>
             <artifactId>jackson-databind</artifactId>

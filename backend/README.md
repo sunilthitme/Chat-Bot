@@ -1,6 +1,6 @@
 # Internal Chatbot Backend
 
-Spring Boot REST API for a DB-first enterprise chatbot with local-only RAG: H2 JSON vector storage, Apache Lucene BM25 keyword search, Java cosine similarity, session memory, async ingestion, streaming Ollama responses, and strict grounded prompts.
+Spring Boot REST API for a DB-first enterprise chatbot with local RAG storage: H2 JSON vector storage, Apache Lucene BM25 keyword search, Java cosine similarity, session memory, async ingestion, GitHub Models chat generation, and confidence-aware prompts.
 
 ## Run
 
@@ -8,12 +8,13 @@ Spring Boot REST API for a DB-first enterprise chatbot with local-only RAG: H2 J
 mvn spring-boot:run
 ```
 
-## Required Local AI Runtime
+## Required AI Providers
 
 ```bash
-ollama pull phi3:mini
 ollama pull nomic-embed-text
 ```
+
+Set `GITHUB_TOKEN` with a GitHub token that has GitHub Models access. Ollama remains local-only for the existing embedding pipeline.
 
 No database server, vector database, Docker service, or Python service is required.
 
@@ -84,8 +85,10 @@ rag.neighbor-expansion-limit=1
 rag.lucene.rebuild-on-startup=true
 rag.retrieval-cache-size=128
 rag.max-context-chars=2200
-ollama.model=phi3:mini
-ollama.num-predict=256
+ai.github.endpoint=https://models.github.ai/inference/chat/completions
+ai.github.model=openai/gpt-4o-mini
+ai.github.token=${GITHUB_TOKEN:}
+ollama.embedding-model=nomic-embed-text
 ```
 
 Reference SQL is in `src/main/resources/schema-enterprise.sql`.

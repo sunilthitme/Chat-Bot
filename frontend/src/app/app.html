@@ -1,10 +1,10 @@
 <main class="enterprise-shell">
-  <header class="portal-header" aria-label="TD internal portal header">
+  <header class="portal-header" aria-label="Internal portal header">
     <div class="brand-band">
       <div class="brand-lockup">
-        <img class="td-mark" src="assets/td-bank-logo.png" alt="TD Bank logo">
+        <img class="td-mark" src="assets/td-bank-logo.png" alt="Enterprise logo">
         <div>
-          <h1>TD Internal Chat Bot</h1>
+          <h1>Internal Chat Bot</h1>
           <p>Enterprise AI Service Desk</p>
         </div>
       </div>
@@ -179,7 +179,7 @@
           [class.bot-row]="message.sender === 'bot'"
         >
           <article class="message-bubble">
-            <div class="message-avatar" aria-hidden="true">{{ message.sender === 'user' ? 'You' : 'TD' }}</div>
+            <div class="message-avatar" aria-hidden="true">{{ message.sender === 'user' ? 'You' : 'AI' }}</div>
             <div class="message-body">
               <div class="message-content" [innerHTML]="renderMarkdown(message.text)"></div>
               <div *ngIf="message.sources?.length" class="source-list" aria-label="Uploaded source references">
@@ -194,7 +194,7 @@
 
         <div *ngIf="isLoading()" class="message-row bot-row">
           <article class="message-bubble typing">
-            <div class="message-avatar" aria-hidden="true">TD</div>
+            <div class="message-avatar" aria-hidden="true">AI</div>
             <div class="typing-dots" aria-label="Assistant is typing">
               <span></span><span></span><span></span>
             </div>

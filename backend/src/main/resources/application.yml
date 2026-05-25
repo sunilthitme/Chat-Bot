@@ -1,0 +1,13 @@
+ai:
+  github:
+    enabled: true
+    token: ${GITHUB_TOKEN:}
+    endpoint: https://models.github.ai/inference/chat/completions
+    model: openai/gpt-4o-mini
+    api-version: 2026-03-10
+    temperature: 0.2
+    max-tokens: 1000
+    connect-timeout: 5s
+    request-timeout: 120s
+    retry-attempts: 2
+    retry-backoff: 500ms
