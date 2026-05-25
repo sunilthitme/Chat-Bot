@@ -27,13 +27,20 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import java.util.function.Consumer;
+import java.util.regex.Pattern;
 
 @Service
 public class AiOrchestratorService {
 
     private static final Logger log = LoggerFactory.getLogger(AiOrchestratorService.class);
+    private static final Pattern CAPITALIZED_WORD = Pattern.compile("\\b[A-Z][a-z]{2,}\\b");
+    private static final Set<String> NON_SUBJECT_WORDS = Set.of(
+            "How", "What", "When", "Where", "Who", "Why", "Can", "Could", "Would",
+            "Should", "Please", "Tell", "Give", "Show", "Explain", "Hi", "Hello"
+    );
 
     private final ChatQuestionIndexService chatQuestionIndexService;
     private final LlmService llmService;
@@ -88,12 +95,20 @@ public class AiOrchestratorService {
     public ChatResponse ask(ChatRequest request) {
         PreparedChat prepared = prepare(request);
         long llmStartedAt = System.nanoTime();
+        if (shouldUseDeterministicConversationReply(prepared)) {
+            String reply = fallbackReply(prepared);
+            logFallback(prepared, "deterministic-conversation");
+            persistAssistantTurn(prepared, reply);
+            return response(prepared, reply, llmStartedAt, false);
+        }
+
         String reply = generateReply(
                 prepared.prompt(),
                 prepared.storedAnswer(),
                 prepared.requestId(),
                 fallbackReply(prepared)
         );
+        reply = cleanModelReply(reply);
         persistAssistantTurn(prepared, reply);
 
         log.info(
@@ -113,8 +128,17 @@ public class AiOrchestratorService {
         PreparedChat prepared = prepare(request);
         long llmStartedAt = System.nanoTime();
 
+        if (shouldUseDeterministicConversationReply(prepared)) {
+            String reply = fallbackReply(prepared);
+            logFallback(prepared, "deterministic-conversation");
+            onToken.accept(reply);
+            persistAssistantTurn(prepared, reply);
+            return response(prepared, reply, llmStartedAt, true);
+        }
+
         if (!llmService.isEnabled()) {
             String fallback = fallbackReply(prepared);
+            logFallback(prepared, "llm-disabled-or-unavailable");
             onToken.accept(fallback);
             persistAssistantTurn(prepared, fallback);
             return response(prepared, fallback, llmStartedAt, true);
@@ -133,7 +157,9 @@ public class AiOrchestratorService {
         String reply = streamedReply.isEmpty()
                 ? fallbackReply(prepared)
                 : streamedReply.toString();
+        reply = cleanModelReply(reply);
         if (streamedReply.isEmpty()) {
+            logFallback(prepared, "empty-streamed-response");
             onToken.accept(reply);
         }
         persistAssistantTurn(prepared, reply);
@@ -191,14 +217,16 @@ public class AiOrchestratorService {
         long ragMs = elapsedMillis(ragStartedAt);
 
         RetrievalDecision retrievalDecision = retrievalConfidenceService.evaluate(message, storedAnswer, retrievedKnowledge);
-        String responseMode = retrievalDecision.grounded()
-                ? (storedAnswer == null ? "rag" : "stored-rag")
-                : "general";
+        String promptConversationMemory = shouldSuppressConversationMemory(message, retrievalDecision)
+                ? ""
+                : conversationMemory;
+        boolean hasPromptMemory = hasPromptMemory(promptConversationMemory, longTermMemory);
+        String responseMode = responseMode(retrievalDecision, storedAnswer, hasPromptMemory);
         String prompt = retrievalDecision.grounded()
                 ? promptBuilder.buildRagPrompt(
                         message,
                         retrievalQuestion,
-                        conversationMemory,
+                        promptConversationMemory,
                         longTermMemory,
                         session.getActiveDocumentName(),
                         storedAnswer,
@@ -208,7 +236,7 @@ public class AiOrchestratorService {
                 )
                 : promptBuilder.buildGeneralPrompt(
                         message,
-                        conversationMemory,
+                        promptConversationMemory,
                         longTermMemory,
                         session.getActiveDocumentName(),
                         privateMode,
@@ -216,7 +244,7 @@ public class AiOrchestratorService {
                         retrievalDecision.confidence()
                 );
         log.info(
-                "chat request prepared requestId={} privateMode={} mode={} activeDocumentId={} activeDocumentName={} dbHit={} retrievedChunks={} confidence={} decisionReason={} promptChars={} sessionMs={} memoryMs={} dbMs={} ragMs={} prepMs={}",
+                "chat request prepared requestId={} privateMode={} mode={} activeDocumentId={} activeDocumentName={} dbHit={} retrievedChunks={} confidence={} decisionReason={} promptMemory={} promptChars={} sessionMs={} memoryMs={} dbMs={} ragMs={} prepMs={}",
                 requestId,
                 privateMode,
                 responseMode,
@@ -226,6 +254,7 @@ public class AiOrchestratorService {
                 retrievedKnowledge.size(),
                 retrievalDecision.confidence(),
                 retrievalDecision.reason(),
+                hasPromptMemory,
                 prompt.length(),
                 sessionMs,
                 memoryMs,
@@ -239,6 +268,7 @@ public class AiOrchestratorService {
                 startedAt,
                 session.getId(),
                 session.getUserKey(),
+                session.getActiveDocumentId(),
                 privateMode,
                 message,
                 storedAnswer,
@@ -376,6 +406,37 @@ public class AiOrchestratorService {
         );
     }
 
+    private String cleanModelReply(String reply) {
+        if (reply == null || reply.isBlank()) {
+            return "";
+        }
+        return reply
+                .replaceAll("(?i)\\b(of|in|year|like|and|or)(?=\\d)", "$1 ")
+                .replaceAll("(?i)\\s+The information about the specific grading system used is not provided[^.]*\\.", "")
+                .replaceAll("(?i)\\s+Typically,? this would[^.]*\\.", "")
+                .replaceAll("\\s+", " ")
+                .trim();
+    }
+
+    private boolean shouldUseDeterministicConversationReply(PreparedChat prepared) {
+        return !prepared.grounded()
+                && "conversational-turn".equals(prepared.retrievalDecision().reason())
+                && (isGreeting(normalize(prepared.message())) || isThanks(normalize(prepared.message())));
+    }
+
+    private void logFallback(PreparedChat prepared, String trigger) {
+        log.info(
+                "chat fallback triggered requestId={} trigger={} mode={} activeDocumentId={} retrievedChunks={} confidence={} decisionReason={}",
+                prepared.requestId(),
+                trigger,
+                prepared.responseMode(),
+                prepared.activeDocumentId(),
+                prepared.retrievedKnowledge().size(),
+                prepared.retrievalDecision().confidence(),
+                prepared.retrievalDecision().reason()
+        );
+    }
+
     private String fallbackReply(PreparedChat prepared) {
         String normalized = normalize(prepared.message());
         if (isGreeting(normalized)) {
@@ -399,6 +460,38 @@ public class AiOrchestratorService {
                 + defaultString(conversationMemory)
                 + "\nLong-term memory:\n"
                 + defaultString(longTermMemory);
+    }
+
+    private String responseMode(RetrievalDecision retrievalDecision, String storedAnswer, boolean hasPromptMemory) {
+        if (!retrievalDecision.grounded()) {
+            return "general";
+        }
+        if (hasPromptMemory) {
+            return "mixed";
+        }
+        return storedAnswer == null ? "rag" : "stored-rag";
+    }
+
+    private boolean hasPromptMemory(String conversationMemory, String longTermMemory) {
+        return (conversationMemory != null && !conversationMemory.isBlank())
+                || (longTermMemory != null && !longTermMemory.isBlank());
+    }
+
+    private boolean shouldSuppressConversationMemory(String message, RetrievalDecision retrievalDecision) {
+        return retrievalDecision.grounded() && containsNamedSubject(message);
+    }
+
+    private boolean containsNamedSubject(String message) {
+        if (message == null || message.isBlank()) {
+            return false;
+        }
+        var matcher = CAPITALIZED_WORD.matcher(message);
+        while (matcher.find()) {
+            if (!NON_SUBJECT_WORDS.contains(matcher.group())) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private boolean containsAny(String text, String... needles) {
@@ -449,6 +542,7 @@ public class AiOrchestratorService {
             long startedAt,
             String sessionId,
             String userKey,
+            Long activeDocumentId,
             boolean privateMode,
             String message,
             String storedAnswer,

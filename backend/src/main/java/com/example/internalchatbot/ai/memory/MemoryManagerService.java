@@ -74,6 +74,7 @@ public class MemoryManagerService {
 
     public String recallRelevantMemory(String userKey, String sessionId, String userQuestion, boolean privateMode) {
         if (privateMode) {
+            log.info("memory recall skipped sessionId={} reason=private-mode", safe(sessionId));
             return "";
         }
 
@@ -108,12 +109,14 @@ public class MemoryManagerService {
             );
         }
 
-        StringBuilder builder = new StringBuilder();
-        deduped.values()
+        List<ScoredMemory> selected = deduped.values()
                 .stream()
                 .sorted(Comparator.comparingDouble(ScoredMemory::score).reversed())
                 .limit(recallLimit)
-                .forEach(memory -> {
+                .toList();
+
+        StringBuilder builder = new StringBuilder();
+        selected.forEach(memory -> {
                     if (builder.length() < maxRecallChars) {
                         builder.append("- ")
                                 .append(memory.memory().getMemoryType())
@@ -122,6 +125,14 @@ public class MemoryManagerService {
                                 .append('\n');
                     }
                 });
+        log.info(
+                "memory recall completed sessionId={} userKey={} candidates={} selected={} chars={}",
+                safe(sessionId),
+                safe(normalizedUserKey),
+                deduped.size(),
+                selected.size(),
+                builder.length()
+        );
         return trim(builder.toString(), maxRecallChars);
     }
 
@@ -141,6 +152,7 @@ public class MemoryManagerService {
     private void rememberTurn(String sessionId, String userKey, String userMessage, String assistantResponse) {
         List<MemoryCandidate> candidates = extractMemoryCandidates(userMessage, assistantResponse);
         if (candidates.isEmpty()) {
+            log.debug("memory storage skipped sessionId={} reason=no-meaningful-candidates", safe(sessionId));
             return;
         }
 
@@ -158,6 +170,14 @@ public class MemoryManagerService {
                 memory.setImportanceScore(Math.max(memory.getImportanceScore(), candidate.importance()));
                 UserMemory saved = userMemoryRepository.save(memory);
                 ensureMemoryEmbedding(saved);
+                log.info(
+                        "memory stored sessionId={} userKey={} type={} importance={} hasEmbedding={}",
+                        safe(sessionId),
+                        safe(normalizedUserKey),
+                        candidate.type(),
+                        candidate.importance(),
+                        saved.getEmbeddingId() != null
+                );
             } catch (RuntimeException ex) {
                 log.warn("Unable to persist long-term memory for sessionId={}", safe(sessionId), ex);
             }
