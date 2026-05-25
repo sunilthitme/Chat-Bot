@@ -170,36 +170,6 @@
   }
 }
 
-.portal-nav {
-  min-height: 44px;
-  display: flex;
-  align-items: center;
-  gap: 0;
-  padding: 0 28px;
-  background: var(--td-green-700);
-
-  a {
-    min-height: 44px;
-    display: inline-flex;
-    align-items: center;
-    padding: 0 26px;
-    border-left: 1px solid rgba(255, 255, 255, 0.16);
-    color: #ffffff;
-    text-decoration: none;
-    font-size: 15px;
-    font-weight: 700;
-  }
-
-  a:last-child {
-    border-right: 1px solid rgba(255, 255, 255, 0.16);
-  }
-
-  a[aria-current='page'],
-  a:hover {
-    background: rgba(0, 0, 0, 0.16);
-  }
-}
-
 .workspace {
   min-height: 0;
   display: grid;
@@ -328,7 +298,7 @@
 
 .assistant-workbench {
   min-width: 0;
-  height: calc(100vh - 118px);
+  height: calc(100vh - 74px);
   display: grid;
   grid-template-rows: auto auto auto auto 1fr auto;
   overflow: hidden;
@@ -745,12 +715,8 @@ input:disabled {
     flex-wrap: wrap;
   }
 
-  .portal-nav {
-    padding: 0 24px;
-  }
-
   .assistant-workbench {
-    height: calc(100vh - 172px);
+    height: calc(100vh - 128px);
   }
 }
 
@@ -788,16 +754,6 @@ input:disabled {
   .chat-form {
     padding-left: 16px;
     padding-right: 16px;
-  }
-
-  .portal-nav {
-    overflow-x: auto;
-    padding: 0;
-  }
-
-  .portal-nav a {
-    flex: 0 0 auto;
-    padding: 0 16px;
   }
 
   .header-controls,
