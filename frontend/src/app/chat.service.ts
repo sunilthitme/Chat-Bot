@@ -13,6 +13,8 @@ export interface ChatResponse {
   reply: string;
   privateMode: boolean;
   sources: SourceReference[];
+  responseMode?: string;
+  retrievalConfidence?: number;
 }
 
 export interface SourceReference {

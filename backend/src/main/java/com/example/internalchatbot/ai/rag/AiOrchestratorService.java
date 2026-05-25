@@ -3,10 +3,13 @@ package com.example.internalchatbot.ai.rag;
 import com.example.internalchatbot.ai.ingestion.KnowledgeIngestionService;
 import com.example.internalchatbot.ai.llm.LlmService;
 import com.example.internalchatbot.ai.memory.ConversationMemoryService;
+import com.example.internalchatbot.ai.memory.MemoryManagerService;
 import com.example.internalchatbot.ai.memory.SessionService;
 import com.example.internalchatbot.ai.prompts.PromptBuilder;
 import com.example.internalchatbot.ai.retrieval.ChatQuestionIndexService;
 import com.example.internalchatbot.ai.retrieval.RagRetrievalService;
+import com.example.internalchatbot.ai.retrieval.RetrievalConfidenceService;
+import com.example.internalchatbot.ai.retrieval.RetrievalDecision;
 import com.example.internalchatbot.ai.vectorstore.VectorSearchResult;
 import com.example.internalchatbot.dto.ChatRequest;
 import com.example.internalchatbot.dto.ChatResponse;
@@ -31,15 +34,15 @@ import java.util.function.Consumer;
 public class AiOrchestratorService {
 
     private static final Logger log = LoggerFactory.getLogger(AiOrchestratorService.class);
-    private static final String NOT_FOUND_REPLY = "Information not found in the indexed knowledge.";
-    private static final String INDEXING_REPLY = "Document is still being indexed. Please wait.";
 
     private final ChatQuestionIndexService chatQuestionIndexService;
     private final LlmService llmService;
     private final SessionService sessionService;
     private final ConversationMemoryService conversationMemoryService;
+    private final MemoryManagerService memoryManagerService;
     private final KnowledgeIngestionService knowledgeIngestionService;
     private final RagRetrievalService ragRetrievalService;
+    private final RetrievalConfidenceService retrievalConfidenceService;
     private final PromptBuilder promptBuilder;
     private final int internalSearchLimit;
     private final Map<String, Optional<String>> answerCache;
@@ -49,8 +52,10 @@ public class AiOrchestratorService {
             LlmService llmService,
             SessionService sessionService,
             ConversationMemoryService conversationMemoryService,
+            MemoryManagerService memoryManagerService,
             KnowledgeIngestionService knowledgeIngestionService,
             RagRetrievalService ragRetrievalService,
+            RetrievalConfidenceService retrievalConfidenceService,
             PromptBuilder promptBuilder,
             @Value("${chat.internal-search-limit:5}") int internalSearchLimit,
             @Value("${chat.answer-cache-size:256}") int answerCacheSize
@@ -59,8 +64,10 @@ public class AiOrchestratorService {
         this.llmService = llmService;
         this.sessionService = sessionService;
         this.conversationMemoryService = conversationMemoryService;
+        this.memoryManagerService = memoryManagerService;
         this.knowledgeIngestionService = knowledgeIngestionService;
         this.ragRetrievalService = ragRetrievalService;
+        this.retrievalConfidenceService = retrievalConfidenceService;
         this.promptBuilder = promptBuilder;
         this.internalSearchLimit = Math.max(1, Math.min(internalSearchLimit, 10));
         int safeCacheSize = Math.max(32, answerCacheSize);
@@ -81,45 +88,35 @@ public class AiOrchestratorService {
     public ChatResponse ask(ChatRequest request) {
         PreparedChat prepared = prepare(request);
         long llmStartedAt = System.nanoTime();
-        if (prepared.indexingActive()) {
-            return indexingResponse(prepared, llmStartedAt, false, null);
-        }
-        if (!prepared.hasGrounding()) {
-            return noGroundingResponse(prepared, llmStartedAt, false, null);
-        }
-
-        String reply = generateReply(prepared.prompt(), prepared.storedAnswer(), prepared.requestId());
-        sessionService.saveMessage(prepared.sessionId(), "assistant", reply, prepared.privateMode());
+        String reply = generateReply(
+                prepared.prompt(),
+                prepared.storedAnswer(),
+                prepared.requestId(),
+                fallbackReply(prepared)
+        );
+        persistAssistantTurn(prepared, reply);
 
         log.info(
-                "chat request completed requestId={} stream=false retrievedChunks={} llmMs={} totalMs={}",
+                "chat request completed requestId={} stream=false mode={} retrievedChunks={} confidence={} llmMs={} totalMs={}",
                 prepared.requestId(),
+                prepared.responseMode(),
                 prepared.retrievedKnowledge().size(),
+                prepared.retrievalDecision().confidence(),
                 elapsedMillis(llmStartedAt),
                 elapsedMillis(prepared.startedAt())
         );
 
-        return new ChatResponse(
-                reply,
-                prepared.privateMode(),
-                sourceReferences(prepared.retrievedKnowledge())
-        );
+        return response(prepared, reply, llmStartedAt, false);
     }
 
     public ChatResponse stream(ChatRequest request, Consumer<String> onToken) {
         PreparedChat prepared = prepare(request);
         long llmStartedAt = System.nanoTime();
-        if (prepared.indexingActive()) {
-            return indexingResponse(prepared, llmStartedAt, true, onToken);
-        }
-        if (!prepared.hasGrounding()) {
-            return noGroundingResponse(prepared, llmStartedAt, true, onToken);
-        }
 
         if (!llmService.isEnabled()) {
-            String fallback = prepared.storedAnswer() == null ? NOT_FOUND_REPLY : prepared.storedAnswer();
+            String fallback = fallbackReply(prepared);
             onToken.accept(fallback);
-            sessionService.saveMessage(prepared.sessionId(), "assistant", fallback, prepared.privateMode());
+            persistAssistantTurn(prepared, fallback);
             return response(prepared, fallback, llmStartedAt, true);
         }
 
@@ -130,16 +127,16 @@ public class AiOrchestratorService {
                 onToken.accept(token);
             });
         } catch (RestClientException ex) {
-            log.warn("Ollama streaming failed requestId={}. Falling back to stored answer when available.", prepared.requestId(), ex);
+            log.warn("Ollama streaming failed requestId={}. Falling back gracefully.", prepared.requestId(), ex);
         }
 
         String reply = streamedReply.isEmpty()
-                ? (prepared.storedAnswer() == null ? NOT_FOUND_REPLY : prepared.storedAnswer())
+                ? fallbackReply(prepared)
                 : streamedReply.toString();
         if (streamedReply.isEmpty()) {
             onToken.accept(reply);
         }
-        sessionService.saveMessage(prepared.sessionId(), "assistant", reply, prepared.privateMode());
+        persistAssistantTurn(prepared, reply);
         return response(prepared, reply, llmStartedAt, true);
     }
 
@@ -156,66 +153,79 @@ public class AiOrchestratorService {
                 message
         );
         boolean privateMode = session.isPrivateMode() || request.isPrivateMode();
-        if (!privateMode && knowledgeIngestionService.hasActiveIngestion(session.getId())) {
-            log.info(
-                    "chat request blocked while ingestion is active requestId={} sessionMs={} totalMs={}",
-                    requestId,
-                    elapsedMillis(sessionStartedAt),
-                    elapsedMillis(startedAt)
-            );
-            return new PreparedChat(
-                    requestId,
-                    startedAt,
-                    session.getId(),
-                    false,
-                    null,
-                    List.of(),
-                    "",
-                    false,
-                    true
-            );
-        }
+        boolean indexingActive = !privateMode && knowledgeIngestionService.hasActiveIngestion(session.getId());
         sessionService.saveMessage(session.getId(), "user", message, privateMode);
         long sessionMs = elapsedMillis(sessionStartedAt);
 
         long memoryStartedAt = System.nanoTime();
-        String memory = conversationMemoryService.loadMemory(session.getId(), privateMode);
-        String retrievalQuestion = conversationMemoryService.buildRetrievalQuery(message, memory);
+        String conversationMemory = conversationMemoryService.loadMemory(session.getId(), privateMode);
+        String longTermMemory = memoryManagerService.recallRelevantMemory(
+                session.getUserKey(),
+                session.getId(),
+                message,
+                privateMode
+        );
+        String retrievalQuestion = conversationMemoryService.buildRetrievalQuery(
+                message,
+                combineMemory(conversationMemory, longTermMemory)
+        );
         long memoryMs = elapsedMillis(memoryStartedAt);
 
         long dbStartedAt = System.nanoTime();
         String normalizedMessage = normalize(message);
-        String storedAnswer = findStoredAnswer(normalizedMessage, requestId);
+        boolean retrievalCandidate = retrievalConfidenceService.shouldAttemptRetrieval(message);
+        String storedAnswer = retrievalCandidate ? findStoredAnswer(normalizedMessage, requestId) : null;
         long dbMs = elapsedMillis(dbStartedAt);
 
         long ragStartedAt = System.nanoTime();
-        List<VectorSearchResult> retrievedKnowledge = ragRetrievalService.retrieve(
-                session.getId(),
-                session.getUserKey(),
-                session.getActiveDocumentId(),
-                message,
-                retrievalQuestion,
-                privateMode
-        );
+        List<VectorSearchResult> retrievedKnowledge = retrievalCandidate
+                ? ragRetrievalService.retrieve(
+                        session.getId(),
+                        session.getUserKey(),
+                        session.getActiveDocumentId(),
+                        message,
+                        retrievalQuestion,
+                        privateMode
+                )
+                : List.of();
         long ragMs = elapsedMillis(ragStartedAt);
 
-        String prompt = promptBuilder.buildChatPrompt(
-                message,
-                retrievalQuestion,
-                memory,
-                session.getActiveDocumentName(),
-                storedAnswer,
-                retrievedKnowledge,
-                privateMode
-        );
+        RetrievalDecision retrievalDecision = retrievalConfidenceService.evaluate(message, storedAnswer, retrievedKnowledge);
+        String responseMode = retrievalDecision.grounded()
+                ? (storedAnswer == null ? "rag" : "stored-rag")
+                : "general";
+        String prompt = retrievalDecision.grounded()
+                ? promptBuilder.buildRagPrompt(
+                        message,
+                        retrievalQuestion,
+                        conversationMemory,
+                        longTermMemory,
+                        session.getActiveDocumentName(),
+                        storedAnswer,
+                        retrievedKnowledge,
+                        privateMode,
+                        retrievalDecision.confidence()
+                )
+                : promptBuilder.buildGeneralPrompt(
+                        message,
+                        conversationMemory,
+                        longTermMemory,
+                        session.getActiveDocumentName(),
+                        privateMode,
+                        indexingActive,
+                        retrievalDecision.confidence()
+                );
         log.info(
-                "chat request prepared requestId={} privateMode={} activeDocumentId={} activeDocumentName={} dbHit={} retrievedChunks={} promptChars={} sessionMs={} memoryMs={} dbMs={} ragMs={} prepMs={}",
+                "chat request prepared requestId={} privateMode={} mode={} activeDocumentId={} activeDocumentName={} dbHit={} retrievedChunks={} confidence={} decisionReason={} promptChars={} sessionMs={} memoryMs={} dbMs={} ragMs={} prepMs={}",
                 requestId,
                 privateMode,
+                responseMode,
                 session.getActiveDocumentId(),
                 session.getActiveDocumentName(),
                 storedAnswer != null,
                 retrievedKnowledge.size(),
+                retrievalDecision.confidence(),
+                retrievalDecision.reason(),
                 prompt.length(),
                 sessionMs,
                 memoryMs,
@@ -228,12 +238,16 @@ public class AiOrchestratorService {
                 requestId,
                 startedAt,
                 session.getId(),
+                session.getUserKey(),
                 privateMode,
+                message,
                 storedAnswer,
                 retrievedKnowledge,
                 prompt,
-                hasGrounding(storedAnswer, retrievedKnowledge),
-                false
+                retrievalDecision,
+                responseMode,
+                retrievalDecision.grounded(),
+                indexingActive
         );
     }
 
@@ -293,9 +307,9 @@ public class AiOrchestratorService {
         return matches * 10.0 / Math.max(1, queryTokens.size());
     }
 
-    private String generateReply(String prompt, String storedAnswer, String requestId) {
+    private String generateReply(String prompt, String storedAnswer, String requestId, String fallbackReply) {
         if (!llmService.isEnabled()) {
-            return storedAnswer == null ? NOT_FOUND_REPLY : storedAnswer;
+            return storedAnswer == null ? fallbackReply : storedAnswer;
         }
 
         try {
@@ -304,45 +318,30 @@ public class AiOrchestratorService {
                 return llmReply;
             }
         } catch (RuntimeException ex) {
-            log.warn("Ollama request failed requestId={}. Falling back to stored answer when available.", requestId, ex);
+            log.warn("Ollama request failed requestId={}. Falling back gracefully.", requestId, ex);
         }
 
-        return storedAnswer == null ? NOT_FOUND_REPLY : storedAnswer;
+        return storedAnswer == null ? fallbackReply : storedAnswer;
     }
 
     private ChatResponse response(PreparedChat prepared, String reply, long llmStartedAt, boolean stream) {
         log.info(
-                "chat request completed requestId={} stream={} retrievedChunks={} llmMs={} totalMs={}",
+                "chat request completed requestId={} stream={} mode={} retrievedChunks={} confidence={} llmMs={} totalMs={}",
                 prepared.requestId(),
                 stream,
+                prepared.responseMode(),
                 prepared.retrievedKnowledge().size(),
+                prepared.retrievalDecision().confidence(),
                 elapsedMillis(llmStartedAt),
                 elapsedMillis(prepared.startedAt())
         );
         return new ChatResponse(
                 reply,
                 prepared.privateMode(),
-                sourceReferences(prepared.retrievedKnowledge())
+                sourceReferences(prepared.grounded() ? prepared.retrievedKnowledge() : List.of()),
+                prepared.responseMode(),
+                prepared.retrievalDecision().confidence()
         );
-    }
-
-    private ChatResponse noGroundingResponse(
-            PreparedChat prepared,
-            long llmStartedAt,
-            boolean stream,
-            Consumer<String> onToken
-    ) {
-        if (onToken != null) {
-            onToken.accept(NOT_FOUND_REPLY);
-        }
-        sessionService.saveMessage(prepared.sessionId(), "assistant", NOT_FOUND_REPLY, prepared.privateMode());
-        log.info(
-                "chat request completed requestId={} stream={} retrievedChunks=0 llmSkipped=true totalMs={}",
-                prepared.requestId(),
-                stream,
-                elapsedMillis(prepared.startedAt())
-        );
-        return response(prepared, NOT_FOUND_REPLY, llmStartedAt, stream);
     }
 
     private List<SourceReferenceResponse> sourceReferences(List<VectorSearchResult> retrievedKnowledge) {
@@ -366,26 +365,65 @@ public class AiOrchestratorService {
         return List.copyOf(references.values());
     }
 
-    private ChatResponse indexingResponse(
-            PreparedChat prepared,
-            long llmStartedAt,
-            boolean stream,
-            Consumer<String> onToken
-    ) {
-        if (onToken != null) {
-            onToken.accept(INDEXING_REPLY);
-        }
-        log.info(
-                "chat request blocked requestId={} stream={} reason=ingestion-active totalMs={}",
-                prepared.requestId(),
-                stream,
-                elapsedMillis(prepared.startedAt())
+    private void persistAssistantTurn(PreparedChat prepared, String reply) {
+        sessionService.saveMessage(prepared.sessionId(), "assistant", reply, prepared.privateMode());
+        memoryManagerService.rememberTurnAsync(
+                prepared.sessionId(),
+                prepared.userKey(),
+                prepared.message(),
+                reply,
+                prepared.privateMode()
         );
-        return response(prepared, INDEXING_REPLY, llmStartedAt, stream);
     }
 
-    private boolean hasGrounding(String storedAnswer, List<VectorSearchResult> retrievedKnowledge) {
-        return storedAnswer != null && !storedAnswer.isBlank() || !retrievedKnowledge.isEmpty();
+    private String fallbackReply(PreparedChat prepared) {
+        String normalized = normalize(prepared.message());
+        if (isGreeting(normalized)) {
+            return "Hello! How can I help you today?";
+        }
+        if (isThanks(normalized)) {
+            return "You're welcome. What would you like to work on next?";
+        }
+        if (prepared.indexingActive() && containsAny(normalized, "document", "upload", "file", "pdf", "indexed")) {
+            return "Some uploaded content is still being indexed. I can answer from it once indexing completes, or I can help generally if you share the relevant details here.";
+        }
+        return "I do not have enough relevant indexed context for that, and Ollama is currently unavailable. Once Ollama is running, I can answer generally or use matching uploaded knowledge.";
+    }
+
+    private String combineMemory(String conversationMemory, String longTermMemory) {
+        if ((conversationMemory == null || conversationMemory.isBlank())
+                && (longTermMemory == null || longTermMemory.isBlank())) {
+            return "";
+        }
+        return "Recent conversation:\n"
+                + defaultString(conversationMemory)
+                + "\nLong-term memory:\n"
+                + defaultString(longTermMemory);
+    }
+
+    private boolean containsAny(String text, String... needles) {
+        for (String needle : needles) {
+            if (text.contains(needle)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private boolean isGreeting(String normalized) {
+        return normalized.equals("hi")
+                || normalized.equals("hello")
+                || normalized.equals("hey")
+                || normalized.equals("good morning")
+                || normalized.equals("good afternoon")
+                || normalized.equals("good evening");
+    }
+
+    private boolean isThanks(String normalized) {
+        return normalized.equals("thanks")
+                || normalized.equals("thank you")
+                || normalized.equals("thx")
+                || normalized.equals("ty");
     }
 
     private String normalize(String text) {
@@ -410,11 +448,15 @@ public class AiOrchestratorService {
             String requestId,
             long startedAt,
             String sessionId,
+            String userKey,
             boolean privateMode,
+            String message,
             String storedAnswer,
             List<VectorSearchResult> retrievedKnowledge,
             String prompt,
-            boolean hasGrounding,
+            RetrievalDecision retrievalDecision,
+            String responseMode,
+            boolean grounded,
             boolean indexingActive
     ) {
     }

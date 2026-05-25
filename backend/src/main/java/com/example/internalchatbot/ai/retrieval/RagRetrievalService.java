@@ -78,7 +78,7 @@ public class RagRetrievalService {
             String retrievalQuestion,
             boolean privateMode
     ) {
-        if (privateMode || retrievalQuestion == null || retrievalQuestion.isBlank()) {
+        if (retrievalQuestion == null || retrievalQuestion.isBlank()) {
             return List.of();
         }
 

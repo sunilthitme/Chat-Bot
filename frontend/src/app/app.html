@@ -102,7 +102,7 @@
         name="message"
         [(ngModel)]="userInput"
         (ngModelChange)="onUserInputChange($event)"
-        placeholder="Ask about internal knowledge, uploaded docs, or indexed webpages"
+        placeholder="Message the assistant or ask about uploaded knowledge"
         autocomplete="off"
         [disabled]="isLoading() || indexingActive()"
       >

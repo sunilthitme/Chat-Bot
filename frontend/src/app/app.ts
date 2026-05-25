@@ -39,7 +39,7 @@ export class AppComponent implements AfterViewChecked, OnDestroy, OnInit {
   readonly messages = signal<ChatMessage[]>([
     {
       sender: 'bot',
-      text: 'Hi, ask me about your internal knowledge, uploaded documents, or trusted websites.'
+      text: 'Hi, I can chat normally, remember useful context, and use uploaded or indexed knowledge when it is relevant.'
     }
   ]);
 
@@ -162,7 +162,7 @@ export class AppComponent implements AfterViewChecked, OnDestroy, OnInit {
           this.privateMode.set(session.privateMode);
           this.messages.set([{
             sender: 'bot',
-            text: 'New chat started. Ask me about internal knowledge, uploaded files, or trusted websites.'
+            text: 'New chat started. Ask me anything, or upload knowledge when you want grounded answers.'
           }]);
           this.loadSessions();
         }
@@ -281,7 +281,7 @@ export class AppComponent implements AfterViewChecked, OnDestroy, OnInit {
 
   activeDocumentLabel(): string {
     const session = this.sessions().find((item) => item.id === this.currentSessionId());
-    return session?.activeDocumentName ? `Active document: ${session.activeDocumentName}` : 'DB-first scoped RAG assistant';
+    return session?.activeDocumentName ? `Active document: ${session.activeDocumentName}` : 'Memory-aware AI assistant';
   }
 
   private loadSessions(): void {

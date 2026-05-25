@@ -1,6 +1,6 @@
 # Mature Local RAG Architecture
 
-This branch uses a corporate-safe RAG stack that stays inside the Spring Boot process and H2 database while preserving ChatGPT-style document QA behavior.
+This branch uses a corporate-safe hybrid RAG stack that stays inside the Spring Boot process and H2 database while preserving ChatGPT-style conversation, fallback, and memory behavior.
 
 ## Architecture Diagram
 
@@ -16,7 +16,9 @@ flowchart TD
     LUCENE["Apache Lucene BM25 Index"]
     MEMORY["Session + Active Document Memory"]
     RETRIEVE["Hybrid Retriever + Reranker"]
-    PROMPT["Strict Grounded Prompt"]
+    CONFIDENCE["Retrieval Confidence"]
+    LTM["Long-Term Memory"]
+    PROMPT["RAG or General Prompt"]
     LLM["Ollama phi3:mini Streaming"]
 
     UI --> API
@@ -25,11 +27,14 @@ flowchart TD
     EMBED --> H2
     CHUNK --> LUCENE
     API --> MEMORY
+    API --> LTM
     API --> RETRIEVE
     RETRIEVE --> H2
     RETRIEVE --> LUCENE
+    RETRIEVE --> CONFIDENCE
     MEMORY --> PROMPT
-    RETRIEVE --> PROMPT
+    LTM --> PROMPT
+    CONFIDENCE --> PROMPT
     PROMPT --> LLM --> UI
 ```
 
@@ -41,9 +46,9 @@ ai/
   embeddings/     Ollama embedding client with batching and cache
   ingestion/      document extraction, status tracking, summary, chunking
   llm/            Ollama generate/streaming, timeout and retry handling
-  memory/         session memory and active document continuity
-  prompts/        compact strict RAG prompt construction
-  rag/            one-call orchestration and grounding guardrails
+  memory/         session memory, long-term memory, and active document continuity
+  prompts/        confidence-routed RAG and general assistant prompt construction
+  rag/            one-call orchestration, fallback, and persistence guardrails
   retrieval/      query intent, Lucene BM25, fallback, reranking
   streaming/      SSE response streaming
   vectorstore/    H2 vector JSON storage and Java cosine similarity
@@ -115,11 +120,25 @@ Current question + recent memory
 -> keyword-hybrid fallback
 -> rerank with lexical, section, entity, code, and factual boosts
 -> expand previous/next chunks
--> compact prompt context
+-> calculate answer confidence
+-> use RAG prompt when confidence is high
+-> use general assistant prompt when confidence is low
 -> one streamed Ollama call
 ```
 
-This prevents unrelated indexed webpages from winning over the current uploaded resume/document.
+This prevents unrelated indexed webpages from winning over the current uploaded resume/document, while allowing normal greetings and general questions to be answered naturally instead of returning a retrieval failure.
+
+## Memory Flow
+
+```text
+User + assistant turn
+-> skip private-mode turns
+-> skip lightweight acknowledgements such as hi, ok, thanks
+-> extract preferences, personal facts, project context, and technical context
+-> persist user_memories in H2
+-> create memory embeddings when Ollama embeddings are available
+-> recall relevant short-term and long-term memory for future prompts
+```
 
 ## Resume Retrieval
 

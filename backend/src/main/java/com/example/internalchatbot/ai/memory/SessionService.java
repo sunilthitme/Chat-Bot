@@ -14,12 +14,17 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
+import java.util.Locale;
+import java.util.Set;
 import java.util.UUID;
 
 @Service
 public class SessionService {
 
     private static final String DEFAULT_USER = "local-user";
+    private static final Set<String> TRIVIAL_USER_MESSAGES = Set.of(
+            "hi", "hello", "hey", "ok", "okay", "thanks", "thank you", "thx", "bye", "goodbye"
+    );
 
     private final AppUserRepository appUserRepository;
     private final ChatSessionRepository chatSessionRepository;
@@ -86,7 +91,7 @@ public class SessionService {
     }
 
     public void saveMessage(String sessionId, String role, String content, boolean privateMode) {
-        if (privateMode) {
+        if (privateMode || !shouldPersistMessage(role, content)) {
             return;
         }
 
@@ -97,6 +102,24 @@ public class SessionService {
         chatMessageRepository.save(message);
 
         chatSessionRepository.findById(sessionId).ifPresent(session -> chatSessionRepository.save(session));
+    }
+
+    private boolean shouldPersistMessage(String role, String content) {
+        String normalized = normalizeContent(content);
+        if (normalized.isBlank()) {
+            return false;
+        }
+        if ("user".equalsIgnoreCase(role)) {
+            return !TRIVIAL_USER_MESSAGES.contains(normalized);
+        }
+        return !isLightweightAssistantReply(normalized);
+    }
+
+    private boolean isLightweightAssistantReply(String normalized) {
+        return normalized.length() < 90
+                && (normalized.contains("how can i help")
+                || normalized.contains("you re welcome")
+                || normalized.contains("what would you like to work on next"));
     }
 
     public void activateDocument(String sessionId, Long documentId, String documentName) {
@@ -166,6 +189,15 @@ public class SessionService {
 
     private String normalizeUserKey(String userKey) {
         return userKey == null || userKey.isBlank() ? DEFAULT_USER : userKey.trim().toLowerCase();
+    }
+
+    private String normalizeContent(String content) {
+        return content == null
+                ? ""
+                : content.toLowerCase(Locale.ROOT)
+                        .replaceAll("[^a-z0-9 ]", " ")
+                        .replaceAll("\\s+", " ")
+                        .trim();
     }
 
     private String resolveTitle(String title) {
